@@ -1,9 +1,10 @@
 package mr
 
 import (
-	"encoding/json"
 	"log"
+	"runtime"
 	"sync"
+	"time"
 )
 import "net"
 import "os"
@@ -13,8 +14,10 @@ import "net/http"
 
 type Master struct {
 	// Your definitions here.
-	mapStruct 		mapStruct
-	reduceStruct	reduceStruct
+	mapStruct 			mapStruct
+	reduceStruct 		reduceStruct
+	Wg           		sync.WaitGroup
+	allDone				bool
 }
 
 type mapStruct struct {
@@ -23,22 +26,17 @@ type mapStruct struct {
 	taskState 	map[string]string
 	taskId		map[string]int
 	// undone task count
-	undone 		int
+	done 		int
 	mu 			sync.Mutex
 }
 
 type reduceStruct struct {
 	nReduce				int
-	// 所有的interKey, 当作set用
-	interKeys			map[string]bool
-	// interKeysBucket[i] 为第i个reduce任务所包含的interKey
-	// 一共nReduce个任务
-	interKeysBucket		[][]string
 	// key: taskIndex, 对应uReduce个任务
 	// val: "undone" "assigned" "done"
 	taskState 			map[int]string
 	// undone task count
-	undone 				int
+	done 				int
 	mu 					sync.Mutex
 }
 
@@ -52,9 +50,10 @@ type reduceStruct struct {
 
 func (m *Master) RpcGetTask(args *RpcGetArgs, reply *RpcGetReply) error {
 	m.mapStruct.mu.Lock()
-	if m.mapStruct.undone != 0 {
-		// map undone
-		reply.TaskType = "wait"
+	m.reduceStruct.mu.Lock()
+	reply.TaskType = "wait"
+	if m.mapStruct.done != len(m.mapStruct.taskState) {
+		// assign map task
 		reply.NReduce = m.reduceStruct.nReduce
 		for fileName := range m.mapStruct.taskState {
 			if m.mapStruct.taskState[fileName] == "undone" {
@@ -62,13 +61,26 @@ func (m *Master) RpcGetTask(args *RpcGetArgs, reply *RpcGetReply) error {
 				reply.TaskId = m.mapStruct.taskId[fileName]
 				reply.TaskType = "map"
 				m.mapStruct.taskState[fileName] = "assigned"
+				//m.Wg.Add(1)
+				//go checkTask(m,"map", fileName, 0)
 				break
 			}
 		}
-	}else {
-		// map done
-		reply.TaskType = "reduce"
+	}else if m.reduceStruct.done != m.reduceStruct.nReduce {
+		// assign reduce task
+		for reduceId := range m.reduceStruct.taskState {
+			if m.reduceStruct.taskState[reduceId] == "undone" {
+				reply.TaskId = reduceId
+				reply.NReduce = m.reduceStruct.nReduce
+				reply.TaskType = "reduce"
+				m.reduceStruct.taskState[reduceId] = "assigned"
+				//m.Wg.Add(1)
+				//go checkTask(m, "reduce", "", reduceId)
+				break
+			}
+		}
 	}
+	m.reduceStruct.mu.Unlock()
 	m.mapStruct.mu.Unlock()
 	return nil
 }
@@ -77,43 +89,60 @@ func (m *Master) RpcTaskDone(args *RpcPostArgs, reply *RpcPostReply) error {
 	taskType := args.TaskType
 
 	if taskType == "map" {
-		// submit a map task
+		// post a map task
 		m.mapStruct.mu.Lock()
 		fileName := args.FileName
 		if m.mapStruct.taskState[fileName] == "assigned" {
 			m.mapStruct.taskState[fileName] = "done"
-			m.mapStruct.undone--
-			log.Printf("[Master] mapState: fileName: %v done!! undone = %v \n", fileName, m.mapStruct.undone)
-			log.Printf("[Master] TaskMap: %v \n", m.mapStruct.taskState)
-
+			m.mapStruct.done++
+			log.Printf("[Master] Map: fileName: %v done!! done = %v \n", fileName, m.mapStruct.done)
+			log.Printf("[Master] Map TaskMap: %v \n", m.mapStruct.taskState)
 		}else {
 			log.Printf("[Master] Error! A unassigned MapTask submit??? fileName = %v \n", fileName)
 		}
 		m.mapStruct.mu.Unlock()
+	}else if taskType == "reduce"{
+		// post a reduce task
+		m.reduceStruct.mu.Lock()
+		reduceId := args.ReduceId
+		if m.reduceStruct.taskState[reduceId] == "assigned" {
+			m.reduceStruct.taskState[reduceId] = "done"
+			m.reduceStruct.done++
+			log.Printf("[Master] Reduce: id: %v done!! done = %v \n", reduceId, m.reduceStruct.done)
+			log.Printf("[Master] Reduce TaskMap: %v \n", m.reduceStruct.taskState)
+		}else {
+			log.Printf("[Master] Error! A unassigned ReduceTask submit??? reduceId = %v \n", reduceId)
+		}
+		m.reduceStruct.mu.Unlock()
 	}
 	return nil
 }
 
-func (m *Master) updateInterKeys(fileName string) {
-	file, err := os.Open(fileName)
-	if err != nil {
-		log.Fatalf("[Woker]: cannot open %v", fileName)
-	}
-	dec := json.NewDecoder(file)
-	for {
-		var kv KeyValue
-		if err := dec.Decode(&kv); err != nil {
-			break
+
+func checkTask(m *Master, taskType string, fileName string, reduceId int) {
+	time.Sleep(20*time.Second)
+
+	if taskType == "map" {
+		m.mapStruct.mu.Lock()
+		if m.mapStruct.taskState[fileName] == "assigned" {
+			m.mapStruct.taskState[fileName] = "undone"
+			log.Printf("[Master] Map Task Crash? fileName = %v", fileName)
+			log.Printf("[Master] Map TaskMap: %v \n", m.mapStruct.taskState)
 		}
-		if m.reduceStruct.interKeys[kv.Key] == false {
-			m.reduceStruct.interKeys[kv.Key] = true
+		m.mapStruct.mu.Unlock()
+	}else if taskType == "reduce" {
+		m.reduceStruct.mu.Lock()
+		if m.reduceStruct.taskState[reduceId] == "assigned" {
+			m.reduceStruct.taskState[reduceId] = "undone"
+			time.Sleep(time.Second)
+			log.Printf("[Master] Reduce Task Crash? reduceId = %v", reduceId)
+			log.Printf("[Master] Reduce TaskMap: %v \n", m.reduceStruct.taskState)
 		}
+		m.reduceStruct.mu.Unlock()
 	}
+	m.Wg.Done()
 }
 
-func (m *Master) divideInterKeys()  {
-
-}
 
 //
 // start a thread that listens for RPCs from worker.go
@@ -139,8 +168,13 @@ func (m *Master) Done() bool {
 	ret := false
 
 	// Your code here.
-
-
+	m.reduceStruct.mu.Lock()
+	if m.reduceStruct.done == m.reduceStruct.nReduce {
+		m.allDone = true
+		ret = true
+		m.Wg.Wait()
+	}
+	m.reduceStruct.mu.Unlock()
 	return ret
 }
 
@@ -159,17 +193,55 @@ func MakeMaster(files []string, nReduce int) *Master {
 		m.mapStruct.taskId[fileName] = i
 		m.mapStruct.taskState[fileName] = "undone"
 	}
-	m.mapStruct.undone = len(files)
+	m.mapStruct.done = 0
 	log.Printf("[Master] init TaskMap: %v \n", m.mapStruct.taskState)
 
 	// Init m.reduceStruct
 	m.reduceStruct.nReduce = nReduce
-	m.reduceStruct.interKeys = make(map[string]bool)
-	m.reduceStruct.interKeysBucket = make([][]string, nReduce)
 	m.reduceStruct.taskState = make(map[int]string)
-	m.reduceStruct.undone = nReduce
+	for i := 0; i < nReduce; i++ {
+		m.reduceStruct.taskState[i] = "undone"
+	}
+	m.reduceStruct.done = 0
 
 	// start rpc server
 	m.server()
+	//go m.looper()
 	return &m
+}
+
+func (m *Master) looper()  {
+	for {
+		time.Sleep(10*time.Second)
+		flag := true
+		m.mapStruct.mu.Lock()
+		m.reduceStruct.mu.Lock()
+		for key := range m.mapStruct.taskState {
+			if m.mapStruct.taskState[key] != "done" {
+				flag = false
+			}
+			if m.mapStruct.taskState[key] == "assigned" {
+				m.mapStruct.taskState[key] = "undone"
+				log.Printf("[Master] Map Task Crash? fileName = %v", key)
+				log.Printf("[Master] Map TaskMap: %v \n", m.mapStruct.taskState)
+			}
+		}
+		for key := range m.reduceStruct.taskState {
+			if m.reduceStruct.taskState[key] != "done" {
+				flag = false
+			}
+			if m.reduceStruct.taskState[key] == "assigned" {
+				m.reduceStruct.taskState[key] = "undone"
+				log.Printf("[Master] Reduce Task Crash? reduceId = %v", key)
+				log.Printf("[Master] Reduce TaskMap: %v \n", m.reduceStruct.taskState)
+			}
+		}
+		m.mapStruct.mu.Unlock()
+		m.reduceStruct.mu.Unlock()
+		if flag {
+			log.Printf("[Master] Looper Exit \n")
+			runtime.Goexit()
+		}
+	}
+
 }

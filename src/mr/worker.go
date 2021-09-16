@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -19,6 +20,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// ByKey for sorting by key.
+type ByKey []KeyValue
+
+// Len for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // use ihash(key) % NReduce to choose the reduce
@@ -40,20 +49,18 @@ func Worker(mapf func(string, string) []KeyValue,
 		reply := callGetTask()
 		if reply.TaskType == "map" {
 			log.Printf("[Worker] Get Map Task! FileName = %v \n", reply.FileName)
-			workerMap(mapf,reply)
+			workerMap(mapf, reply)
 		}else if reply.TaskType == "reduce"{
-			log.Printf("[Worker] Get Reduce Task!")
-			time.Sleep(1*time.Second)
-			break
+			log.Printf("[Worker] Get Reduce Task! ReduceId = %v \n", reply.TaskId)
+			workerReduce(reducef, reply)
 		}else if reply.TaskType == "wait" {
-			log.Printf("[Worker] Get Wait Task..zzzz")
-			time.Sleep(1*time.Second)
-			break
+			log.Printf("[Worker] Get wait Task...zzzz")
+			time.Sleep(2*time.Second)
+		}else {
+			log.Printf("[Worker] Get None Task...exit")
+			return
 		}
-
 	}
-
-
 }
 
 func workerMap(mapf func(string, string) []KeyValue, reply *RpcGetReply) {
@@ -83,9 +90,51 @@ func workerMap(mapf func(string, string) []KeyValue, reply *RpcGetReply) {
 			log.Fatalf("[Worker]: InterFile Encode Error %v", err)
 		}
 	}
-	callTaskDone("map", reply.FileName)
+	callMapTaskDone(reply.FileName)
 }
 
+func workerReduce(reducef func(string, []string) string, reply *RpcGetReply) {
+	reduceId := reply.TaskId
+	outFileName := "mr-out-" + strconv.Itoa(reduceId) + ".txt"
+	outFile, err := os.Create(outFileName)
+	if err != nil {
+		log.Fatalf("[Worker]: Create OutputFile Error: %v", outFileName)
+	}
+
+	var interKVs []KeyValue
+	// 一个ReduceTask, 需要对8个文件进行处理
+	for i := 0; i <= 7; {
+		interFileName := "mr-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
+		interFile, err := os.Open(interFileName)
+		if err != nil {
+			log.Fatalf("[Worker]: Open InterFile Error %v", err)
+		}
+		dec := json.NewDecoder(interFile)
+		// 读取全部kv
+		for  {
+			var kv KeyValue
+			err = dec.Decode(&kv)
+			if err != nil {
+				break
+			}
+			interKVs = append(interKVs, kv)
+		}
+		i++
+	}
+	sort.Sort(ByKey(interKVs))
+	log.Printf("[Worker] Reduce: interKVs sorted, id = %v, len = %v", reduceId, len(interKVs))
+	for i := 0; i < len(interKVs); {
+		var values []string
+		var j int
+		for j = i; j < len(interKVs) && interKVs[j].Key == interKVs[i].Key; j++ {
+			values = append(values, interKVs[j].Value)
+		}
+		outputValue := reducef(interKVs[i].Key, values)
+		fmt.Fprintf(outFile, "%v %v\n", interKVs[i].Key, outputValue)
+		i = j
+	}
+	callReduceTaskDone(reduceId)
+}
 
 func callGetTask() *RpcGetReply {
 	args := RpcGetArgs{}
@@ -94,12 +143,17 @@ func callGetTask() *RpcGetReply {
 	return &reply
 }
 
-func callTaskDone(takeType string, fileName string) {
-	args := RpcPostArgs{TaskType: takeType, FileName: fileName}
+func callMapTaskDone(fileName string) {
+	args := RpcPostArgs{TaskType: "map", FileName: fileName}
 	reply := RpcPostReply{}
 	call("Master.RpcTaskDone", &args, &reply)
 }
 
+func callReduceTaskDone(reduceId int) {
+	args := RpcPostArgs{TaskType: "reduce", ReduceId: reduceId}
+	reply := RpcPostReply{}
+	call("Master.RpcTaskDone", &args, &reply)
+}
 //
 // send an RPC request to the master, wait for the response.
 // usually returns true.

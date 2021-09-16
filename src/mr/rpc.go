@@ -26,6 +26,7 @@ type RpcGetReply struct {
 type RpcPostArgs struct {
 	TaskType 		string    // map or reduce or wait
 	FileName 		string
+	ReduceId		int
 }
 
 type RpcPostReply struct {
