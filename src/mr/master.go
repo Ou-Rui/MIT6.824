@@ -61,8 +61,8 @@ func (m *Master) RpcGetTask(args *RpcGetArgs, reply *RpcGetReply) error {
 				reply.TaskId = m.mapStruct.taskId[fileName]
 				reply.TaskType = "map"
 				m.mapStruct.taskState[fileName] = "assigned"
-				//m.Wg.Add(1)
-				//go checkTask(m,"map", fileName, 0)
+				m.Wg.Add(1)
+				go checkTask(m,"map", fileName, 0)
 				break
 			}
 		}
@@ -74,8 +74,8 @@ func (m *Master) RpcGetTask(args *RpcGetArgs, reply *RpcGetReply) error {
 				reply.NReduce = m.reduceStruct.nReduce
 				reply.TaskType = "reduce"
 				m.reduceStruct.taskState[reduceId] = "assigned"
-				//m.Wg.Add(1)
-				//go checkTask(m, "reduce", "", reduceId)
+				m.Wg.Add(1)
+				go checkTask(m, "reduce", "", reduceId)
 				break
 			}
 		}
@@ -120,8 +120,14 @@ func (m *Master) RpcTaskDone(args *RpcPostArgs, reply *RpcPostReply) error {
 
 
 func checkTask(m *Master, taskType string, fileName string, reduceId int) {
-	time.Sleep(20*time.Second)
-
+	defer m.Wg.Done()
+	for i := 0; i < 5; i++ {
+		time.Sleep(2*time.Second)
+		if m.allDone {
+			log.Printf("[Checker] All Done! Check exit, type: %v", taskType)
+			return
+		}
+	}
 	if taskType == "map" {
 		m.mapStruct.mu.Lock()
 		if m.mapStruct.taskState[fileName] == "assigned" {
@@ -140,7 +146,7 @@ func checkTask(m *Master, taskType string, fileName string, reduceId int) {
 		}
 		m.reduceStruct.mu.Unlock()
 	}
-	m.Wg.Done()
+
 }
 
 

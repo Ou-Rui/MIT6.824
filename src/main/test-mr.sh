@@ -157,6 +157,7 @@ fi
 wait ; wait
 
 
+rm -f mr-*
 # generate the correct output
 ../mrsequential ../../mrapps/nocrash.so ../pg*txt || exit 1
 sort mr-out-0 > mr-correct-crash.txt
