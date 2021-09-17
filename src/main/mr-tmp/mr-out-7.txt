@@ -1,4 +1,0 @@
-AGREE ../pg-being_ernest.txt ../pg-grimm.txt ../pg-huckleberry_finn.txt ../pg-metamorphosis.txt
-ANY ../pg-being_ernest.txt ../pg-grimm.txt ../pg-huckleberry_finn.txt ../pg-metamorphosis.txt
-America ../pg-huckleberry_finn.txt
-Anabaptists ../pg-being_ernest.txt

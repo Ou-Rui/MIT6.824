@@ -135,7 +135,7 @@ wait ; wait
 
 
 echo '***' Starting reduce parallelism test.
-
+rm -f mr-*
 rm -f mr-out* mr-worker*
 
 timeout -k 2s 180s ../mrmaster ../pg*txt &

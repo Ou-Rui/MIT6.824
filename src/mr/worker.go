@@ -107,7 +107,9 @@ func workerReduce(reducef func(string, []string) string, reply *RpcGetReply) {
 		interFileName := "mr-" + strconv.Itoa(i) + "-" + strconv.Itoa(reduceId) + ".txt"
 		interFile, err := os.Open(interFileName)
 		if err != nil {
-			log.Fatalf("[Worker]: Open InterFile Error %v", err)
+			log.Printf("[Worker] Warning! Not Such InterFile %v", interFileName)
+			i++
+			continue
 		}
 		dec := json.NewDecoder(interFile)
 		// 读取全部kv
