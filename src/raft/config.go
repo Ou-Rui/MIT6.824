@@ -8,7 +8,7 @@ package raft
 // test with the original before submitting.
 //
 
-import "../labrpc"
+import "mymr/src/labrpc"
 import "log"
 import "sync"
 import "testing"

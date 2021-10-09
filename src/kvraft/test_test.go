@@ -1,7 +1,7 @@
 package kvraft
 
-import "../porcupine"
-import "../models"
+import "mymr/src/porcupine"
+import "mymr/src/models"
 import "testing"
 import "strconv"
 import "time"

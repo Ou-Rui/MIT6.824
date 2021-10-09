@@ -1,6 +1,6 @@
 package kvraft
 
-import "../labrpc"
+import "mymr/src/labrpc"
 import "crypto/rand"
 import "math/big"
 
@@ -24,7 +24,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	return ck
 }
 
-//
+// Get
 // fetch the current value for a key.
 // returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
