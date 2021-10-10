@@ -111,8 +111,8 @@ func (rf *Raft) timeoutLoop() {
 		if rf.election.curTimeout > rf.election.timeout {
 			rf.newElection()
 		}
-		time.Sleep(10 * time.Millisecond)
 		rf.mu.Unlock()
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -139,12 +139,16 @@ func (rf *Raft) waitForVoteLoop() {
 				rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
 			rf.state = leader
 			rf.election.reset()
+			rf.mu.Unlock()
+			return
 		}else {
 			// lose
 			DPrintf("[Raft %v]: Election Lose.. Term = %v, Get respond = %v, votes = %v \n",
 				rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
 			rf.state = follower
 			rf.election.reset()
+			rf.mu.Unlock()
+			return
 		}
 		rf.mu.Unlock()
 	}
@@ -161,17 +165,16 @@ func (rf *Raft) AppendEntriesLoop() {
 			return
 		}
 
+		// send HeartBeat Msg
 		if rf.state == leader {
-			// send HeartBeat Msg
 			for i := 0; i < len(rf.peers); i++ {
 				if i != rf.me {
 					go rf.sendAppendEntries(i)
 				}
 			}
 		}
-
-		time.Sleep(10 * time.Millisecond)
 		rf.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -308,7 +311,8 @@ type RequestVoteReply struct {
 // Thread
 func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Lock()
-	if rf.killed() {
+	if rf.killed() || rf.state != candidate{
+		rf.mu.Unlock()
 		return
 	}
 	rvArgs := RequestVoteArgs{
@@ -321,14 +325,19 @@ func (rf *Raft) sendRequestVote(server int) {
 	}
 	rf.mu.Unlock()
 	ok := rf.peers[server].Call("Raft.RequestVote", &rvArgs, &rvReply)
+	rf.mu.Lock()
 	if !ok {
-		DPrintf("[Raft %v]: RequestVote to Raft %v Failed.. Retrying.. \n",
-			rf.me, server)
-		go rf.sendRequestVote(server)
-		return
+		//DPrintf("[Raft %v]: RequestVote to Raft %v Failed.. Retrying.. \n",
+		//	rf.me, server)
+		//go rf.sendRequestVote(server)
+		//rf.mu.Unlock()
+		//return
 	}
 	// handle reply
-	rf.mu.Lock()
+	if rf.killed() || rf.state != candidate{
+		rf.mu.Unlock()
+		return
+	}
 	DPrintf("[Raft %v]: RequestVote to Raft %v Success!",
 		rf.me, server)
 	rf.election.respond++
@@ -359,8 +368,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 	DPrintf("[Raft %v]: RequestVote from Raft %v. myState = %v, myTerm = %v, hisTerm = %v, myVoteFor = %v \n",
 		rf.me, args.CandidateId, rf.state, rf.currentTerm, args.Term, rf.election.votedFor)
-	reply.Term = args.Term
+
 	if args.Term >= rf.currentTerm {
+		reply.Term = args.Term
 		rf.currentTerm = args.Term
 		rf.state = follower
 		rf.election.reset()
@@ -368,7 +378,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
 		}
+		rf.election.curTimeout = 0
 	}else {
+		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 	}
 }
@@ -389,8 +401,8 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	//DPrintf("[Raft %v]: AppendEntries from Raft %v. myState = %v, myTerm = %v, hisTerm = %v\n",
-	//	rf.me, args.LeaderId, rf.state, rf.currentTerm, args.Term)
+	DPrintf("[Raft %v]: AppendEntries from Raft %v. myState = %v, myTerm = %v, hisTerm = %v\n",
+		rf.me, args.LeaderId, rf.state, rf.currentTerm, args.Term)
 	if args.Term >= rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.state = follower
@@ -407,9 +419,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
 	if rf.killed() {
+		rf.mu.Unlock()
 		return
 	}
 	if rf.state != leader {
+		rf.mu.Unlock()
 		return
 	}
 	aeArgs := AppendEntriesArgs{
@@ -422,14 +436,16 @@ func (rf *Raft) sendAppendEntries(server int) {
 	}
 	rf.mu.Unlock()
 	ok := rf.peers[server].Call("Raft.AppendEntries", &aeArgs, &aeReply)
+	rf.mu.Lock()
 	if !ok {
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. Retrying.. \n",
 			rf.me, server)
-		go rf.sendAppendEntries(server)
+		//go rf.sendAppendEntries(server)
+		rf.mu.Unlock()
 		return
 	}
 	// handle ae reply
-	rf.mu.Lock()
+	rf.election.curTimeout = 0
 	//DPrintf("[Raft %v]: AppendEntries to Raft %v Success! Term = %v \n",
 	//	rf.me, server, rf.currentTerm)
 	if aeReply.Term > rf.currentTerm {
@@ -480,6 +496,7 @@ func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
 	DPrintf("[Raft %v]: be killed...", rf.me)
+	time.Sleep(1*time.Second)
 }
 
 func (rf *Raft) killed() bool {
