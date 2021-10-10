@@ -1,0 +1,263 @@
+2021/10/10 16:51:21 [Raft 0]: Initialized!
+2021/10/10 16:51:21 [Raft 1]: Initialized!
+2021/10/10 16:51:21 [Raft 2]: Initialized!
+Test (2A): initial election ...
+2021/10/10 16:51:23 [Raft 2]: Election Timeout!! New Election Begins! Term = 1
+2021/10/10 16:51:23 total = 3, half = 2
+2021/10/10 16:51:23 [Raft 1]: RequestVote from Raft 2. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/10 16:51:23 [Raft 0]: RequestVote from Raft 2. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/10 16:51:23 [Raft 2]: RequestVote to Raft 1 Success!
+2021/10/10 16:51:23 Get One Vote!!
+2021/10/10 16:51:23 respond = 2, votes = 2 
+2021/10/10 16:51:23 [Raft 2]: RequestVote to Raft 0 Success!
+2021/10/10 16:51:23 Get One Vote!!
+2021/10/10 16:51:23 respond = 3, votes = 3 
+2021/10/10 16:51:23 [Raft 2]: Election Win!! Term = 1, Get respond = 3, votes = 3 
+  ... Passed --   5.3  3  264   32618    0
+2021/10/10 16:51:26 [Raft 2]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:26 [Raft 0]: Initialized!
+2021/10/10 16:51:26 [Raft 1]: Initialized!
+2021/10/10 16:51:26 [Raft 2]: Initialized!
+Test (2A): election after network failure ...
+2021/10/10 16:51:29 [Raft 0]: Election Timeout!! New Election Begins! Term = 1
+2021/10/10 16:51:29 total = 3, half = 2
+2021/10/10 16:51:29 [Raft 1]: RequestVote from Raft 0. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/10 16:51:29 [Raft 2]: RequestVote from Raft 0. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/10 16:51:29 [Raft 0]: RequestVote to Raft 1 Success!
+2021/10/10 16:51:29 Get One Vote!!
+2021/10/10 16:51:29 respond = 2, votes = 2 
+2021/10/10 16:51:29 [Raft 0]: RequestVote to Raft 2 Success!
+2021/10/10 16:51:29 Get One Vote!!
+2021/10/10 16:51:29 respond = 3, votes = 3 
+2021/10/10 16:51:29 [Raft 0]: Election Win!! Term = 1, Get respond = 3, votes = 3 
+2021/10/10 16:51:29 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:30 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:30 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:30 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:30 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:30 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:31 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:32 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: Election Timeout!! New Election Begins! Term = 2
+2021/10/10 16:51:33 total = 3, half = 2
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 1]: Election Timeout!! New Election Begins! Term = 2
+2021/10/10 16:51:33 total = 3, half = 2
+2021/10/10 16:51:33 [Raft 2]: Election Timeout!! New Election Begins! Term = 2
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 2]: RequestVote from Raft 1. myState = 1, myTerm = 2, hisTerm = 2, myVoteFor = 2 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 1]: RequestVote to Raft 2 Success!
+2021/10/10 16:51:33 Get One Vote!!
+2021/10/10 16:51:33 respond = 2, votes = 2 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 1]: RequestVote from Raft 2. myState = 1, myTerm = 2, hisTerm = 2, myVoteFor = 1 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 1]: Election Lose.. Term = 2, Get respond = 0, votes = 0 
+2021/10/10 16:51:33 [Raft 2]: RequestVote to Raft 1 Success!
+2021/10/10 16:51:33 Get One Vote!!
+2021/10/10 16:51:33 respond = 1, votes = 1 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:33 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:34 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 2 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+2021/10/10 16:51:35 [Raft 0]: AppendEntries to Raft 1 Failed.. Retrying.. 
+--- FAIL: TestReElection2A (8.47s)
+    config.go:330: expected one leader, got none
+FAIL
+exit status 1
+FAIL	mymr/src/raft	13.810s
