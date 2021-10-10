@@ -131,7 +131,8 @@ func (rf *Raft) waitForVoteLoop() {
 		if rf.election.votes < half && rf.election.respond < total  {
 			rf.election.votesCond.Wait()
 		}
-
+		DPrintf("[Raft %v]: Term = %v, Get respond = %v, votes = %v \n",
+			rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
 		if rf.election.votes >= half {
 			// win the election
 			DPrintf("[Raft %v]: Election Win!! Term = %v, Get respond = %v, votes = %v \n",
@@ -342,7 +343,7 @@ func (rf *Raft) sendRequestVote(server int) {
 		rf.election.votes++
 	}
 	DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
-	rf.election.votesCond.Broadcast()
+	rf.election.votesCond.Signal()
 	rf.mu.Unlock()
 	return
 }
@@ -388,6 +389,8 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	//DPrintf("[Raft %v]: AppendEntries from Raft %v. myState = %v, myTerm = %v, hisTerm = %v\n",
+	//	rf.me, args.LeaderId, rf.state, rf.currentTerm, args.Term)
 	if args.Term >= rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.state = follower
@@ -404,6 +407,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
 	if rf.killed() {
+		return
+	}
+	if rf.state != leader {
 		return
 	}
 	aeArgs := AppendEntriesArgs{
@@ -473,6 +479,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
+	DPrintf("[Raft %v]: be killed...", rf.me)
 }
 
 func (rf *Raft) killed() bool {
