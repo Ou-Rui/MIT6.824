@@ -1,0 +1,223 @@
+2021/10/11 21:57:47 [Raft 0]: Initialized!
+2021/10/11 21:57:47 [Raft 1]: Initialized!
+2021/10/11 21:57:47 [Raft 2]: Initialized!
+2021/10/11 21:57:48 [Raft 1]: Election Timeout!! New Election Begins! Term = 1
+2021/10/11 21:57:48 [Raft 0]: RequestVote from Raft 1. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/11 21:57:48 [Raft 2]: RequestVote from Raft 1. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/11 21:57:48 [Raft 1]: RequestVote to Raft 0 Success!
+2021/10/11 21:57:48 Get One Vote!!
+2021/10/11 21:57:48 respond = 2, votes = 2 
+2021/10/11 21:57:48 [Raft 1]: Term = 1, Get respond = 2, votes = 2 
+2021/10/11 21:57:48 [Raft 1]: Election Win!! Term = 1, Get respond = 2, votes = 2 
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:49 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:50 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 0]: be killed...
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:51 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:52 [Raft 1]: be killed...
+2021/10/11 21:57:53 [Raft 2]: be killed...
+2021/10/11 21:57:54 [Raft 0]: Initialized!
+2021/10/11 21:57:54 [Raft 1]: Initialized!
+2021/10/11 21:57:54 [Raft 2]: Initialized!
+2021/10/11 21:57:55 [Raft 2]: Election Timeout!! New Election Begins! Term = 1
+2021/10/11 21:57:55 [Raft 0]: RequestVote from Raft 2. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/11 21:57:55 [Raft 1]: RequestVote from Raft 2. myState = 0, myTerm = 0, hisTerm = 1, myVoteFor = -1 
+2021/10/11 21:57:55 [Raft 2]: RequestVote to Raft 0 Success!
+2021/10/11 21:57:55 Get One Vote!!
+2021/10/11 21:57:55 respond = 2, votes = 2 
+2021/10/11 21:57:55 [Raft 2]: Term = 1, Get respond = 2, votes = 2 
+2021/10/11 21:57:55 [Raft 2]: Election Win!! Term = 1, Get respond = 2, votes = 2 
+2021/10/11 21:57:55 [Raft 1]: AppendEntries from Raft 2. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:55 [Raft 0]: AppendEntries from Raft 2. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:55 [Raft 0]: AppendEntries from Raft 2. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:55 [Raft 1]: AppendEntries from Raft 2. myState = 0, myTerm = 1, hisTerm = 1
+2021/10/11 21:57:56 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:57:56 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:57:57 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:57:57 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:57:57 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:57:57 [Raft 0]: Election Timeout!! New Election Begins! Term = 2
+2021/10/11 21:57:57 [Raft 1]: RequestVote from Raft 0. myState = 0, myTerm = 1, hisTerm = 2, myVoteFor = -1 
+2021/10/11 21:57:57 [Raft 0]: RequestVote to Raft 1 Success!
+2021/10/11 21:57:57 Get One Vote!!
+2021/10/11 21:57:57 respond = 2, votes = 2 
+2021/10/11 21:57:57 [Raft 0]: Term = 2, Get respond = 2, votes = 2 
+2021/10/11 21:57:57 [Raft 0]: Election Win!! Term = 2, Get respond = 2, votes = 2 
+2021/10/11 21:57:57 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:57:57 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:57 [Raft 2]: AppendEntries from Raft 0. myState = 2, myTerm = 1, hisTerm = 2
+2021/10/11 21:57:57 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:57 [Raft 2]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:57 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 2]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 2]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 1]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 2]: AppendEntries from Raft 0. myState = 0, myTerm = 2, hisTerm = 2
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:57:58 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:57:59 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 2 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:57:59 [Raft 2]: Election Timeout!! New Election Begins! Term = 3
+2021/10/11 21:57:59 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 1 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 1 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 1 
+2021/10/11 21:58:00 [Raft 1]: Election Timeout!! New Election Begins! Term = 3
+2021/10/11 21:58:00 [Raft 2]: RequestVote from Raft 1. myState = 1, myTerm = 3, hisTerm = 3, myVoteFor = 2 
+2021/10/11 21:58:00 [Raft 1]: RequestVote to Raft 2 Success!
+2021/10/11 21:58:00 Get One Vote!!
+2021/10/11 21:58:00 respond = 2, votes = 2 
+2021/10/11 21:58:00 [Raft 1]: Term = 3, Get respond = 2, votes = 2 
+2021/10/11 21:58:00 [Raft 1]: Election Win!! Term = 3, Get respond = 2, votes = 2 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 0. myState = 0, myTerm = 3, hisTerm = 2
+2021/10/11 21:58:00 [Raft 1]: AppendEntries from Raft 0. myState = 2, myTerm = 3, hisTerm = 2
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 1]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:58:00 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:00 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 0]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: be killed...
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:01 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:01 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:02 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:02 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:02 [Raft 2]: AppendEntries from Raft 1. myState = 0, myTerm = 3, hisTerm = 3
+2021/10/11 21:58:02 [Raft 1]: be killed...
+2021/10/11 21:58:02 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:02 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 2]: be killed...
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 0 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 2 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 1]: AppendEntries to Raft 0 Failed.. myState = 2 
+2021/10/11 21:58:03 [Raft 2]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:03 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 
+2021/10/11 21:58:04 [Raft 0]: AppendEntries to Raft 1 Failed.. myState = 0 

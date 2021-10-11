@@ -37,6 +37,9 @@
 # By now, you know everything that happens below.
 # If you still want to read the code, go ahead.
 
+rm -rf ./test-log
+mkdir "test-log"
+
 if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
 	echo "Usage: $0 [RUNS=100] [PARALLELISM=#cpus] [TESTPATTERN='']"
 	exit 1
@@ -68,8 +71,8 @@ if [ $# -gt 2 ]; then
 fi
 
 # Figure out where we left off
-logs=$(find . -maxdepth 1 -name 'test-*.log' -type f -printf '.' | wc -c)
-success=$(grep -E '^PASS$' test-*.log | wc -l)
+logs=$(find ./test-log -maxdepth 1 -name 'test-*.log' -type f -printf '.' | wc -c)
+success=$(grep -E '^PASS$' ./test-log/test-*.log | wc -l)
 ((failed = logs - success))
 
 # Finish checks the exit status of the tester with the given PID, updates the
@@ -78,7 +81,7 @@ finish() {
 	if ! wait "$1"; then
 		if command -v notify-send >/dev/null 2>&1 &&((failed == 0)); then
 			notify-send -i weather-storm "Tests started failing" \
-				"$(pwd)\n$(grep FAIL: -- *.log | sed -e 's/.*FAIL: / - /' -e 's/ (.*)//' | sort -u)"
+				"$(pwd)\n$(grep FAIL: -- ./test-log/*.log | sed -e 's/.*FAIL: / - /' -e 's/ (.*)//' | sort -u)"
 		fi
 		((failed += 1))
 	else
@@ -107,7 +110,7 @@ cleanup() {
 	for pid in "${waits[@]}"; do
 		kill "$pid"
 		wait "$pid"
-		rm -rf "test-${is[0]}.err" "test-${is[0]}.log"
+		rm -rf "./test-log/test-${is[0]}.err" "./test-log/test-${is[0]}.log"
 		is=("${is[@]:1}")
 	done
 	exit 0
@@ -131,10 +134,10 @@ for i in $(seq "$((success+failed+1))" "$runs"); do
 
 	# Run the tester, passing -test.run if necessary
 	if [[ -z "$test" ]]; then
-		./tester -test.v 2> "test-${i}.err" > "test-${i}.log" &
+		./tester -test.v 2> "./test-log/test-${i}.err" > "./test-log/test-${i}.log" &
 		pid=$!
 	else
-		./tester -test.run "$test" -test.v 2> "test-${i}.err" > "test-${i}.log" &
+		./tester -test.run "$test" -test.v 2> "./test-log/test-${i}.err" > "./test-log/test-${i}.log" &
 		pid=$!
 	fi
 

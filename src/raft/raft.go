@@ -100,7 +100,6 @@ func (e *election) reset() {
 func (rf *Raft) timeoutLoop() {
 	for  {
 		rf.mu.Lock()
-
 		if rf.killed() {
 			rf.election.curTimeout = 0
 			rf.mu.Unlock()
@@ -173,6 +172,7 @@ func (rf *Raft) AppendEntriesLoop() {
 
 		// send HeartBeat Msg
 		if rf.state == leader {
+			rf.election.curTimeout = 0		// if leader, never timeout
 			for i := 0; i < len(rf.peers); i++ {
 				if i != rf.me {
 					go rf.sendAppendEntries(i)
@@ -362,7 +362,7 @@ func (rf *Raft) sendRequestVote(server int) {
 		rf.election.votes++
 	}
 	DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
-	rf.election.votesCond.Signal()
+	rf.election.votesCond.Broadcast()
 	return
 }
 
@@ -386,8 +386,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if rf.election.votedFor == -1  {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
+		}else {
+			reply.VoteGranted = false
 		}
-		rf.election.curTimeout = 0
 	}else {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
@@ -428,8 +429,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if !ok {
-		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. Retrying.. \n",
-			rf.me, server)
+		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. myState = %v \n",
+			rf.me, server, rf.state)
 		//go rf.sendAppendEntries(server)
 		return
 	}
@@ -447,6 +448,9 @@ func (rf *Raft) sendAppendEntries(server int) {
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	if rf.killed() {
+		return
+	}
 	DPrintf("[Raft %v]: AppendEntries from Raft %v. myState = %v, myTerm = %v, hisTerm = %v\n",
 		rf.me, args.LeaderId, rf.state, rf.currentTerm, args.Term)
 	if args.Term >= rf.currentTerm {
