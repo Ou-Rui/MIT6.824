@@ -118,7 +118,7 @@ func (rf *Raft) timeoutLoop() {
 
 // waitForVoteLoop
 // Goroutine, start by newElection()
-func (rf *Raft) waitForVoteLoop() {
+func (rf *Raft) waitForVoteLoop(term int) {
 	for  {
 		rf.mu.Lock()
 		if rf.killed() || rf.state != candidate {
@@ -127,9 +127,15 @@ func (rf *Raft) waitForVoteLoop() {
 		}
 		total := len(rf.peers)
 		half := int(math.Ceil(float64(total) / 2))
-		DPrintf("total = %v, half = %v", total, half)
+		//DPrintf("total = %v, half = %v", total, half)
 		if rf.election.votes < half && rf.election.respond < total  {
 			rf.election.votesCond.Wait()
+		}
+		if rf.currentTerm != term {
+			DPrintf("[Raft %v]: Election Wakeup, but Term dont match... electionTerm = %v, curTerm = %v \n",
+				rf.me, term, rf.currentTerm)
+			rf.mu.Unlock()
+			return
 		}
 		DPrintf("[Raft %v]: Term = %v, Get respond = %v, votes = %v \n",
 			rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
@@ -179,6 +185,7 @@ func (rf *Raft) AppendEntriesLoop() {
 }
 
 // newElection require rf.mu.Lock()
+// call by timeoutLoop() when timeout occur
 func (rf *Raft) newElection() {
 	rf.state = candidate
 	rf.currentTerm++
@@ -196,7 +203,7 @@ func (rf *Raft) newElection() {
 		}
 	}
 
-	go rf.waitForVoteLoop()
+	go rf.waitForVoteLoop(rf.currentTerm)
 }
 
 
@@ -308,7 +315,7 @@ type RequestVoteReply struct {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
-// Thread
+// Goroutine
 func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Lock()
 	if rf.killed() || rf.state != candidate{
@@ -324,8 +331,13 @@ func (rf *Raft) sendRequestVote(server int) {
 		VoteGranted: false,
 	}
 	rf.mu.Unlock()
+
+	// RPC Call
 	ok := rf.peers[server].Call("Raft.RequestVote", &rvArgs, &rvReply)
+
+	// handle reply
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if !ok {
 		//DPrintf("[Raft %v]: RequestVote to Raft %v Failed.. Retrying.. \n",
 		//	rf.me, server)
@@ -333,9 +345,7 @@ func (rf *Raft) sendRequestVote(server int) {
 		//rf.mu.Unlock()
 		//return
 	}
-	// handle reply
 	if rf.killed() || rf.state != candidate{
-		rf.mu.Unlock()
 		return
 	}
 	DPrintf("[Raft %v]: RequestVote to Raft %v Success!",
@@ -353,7 +363,6 @@ func (rf *Raft) sendRequestVote(server int) {
 	}
 	DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
 	rf.election.votesCond.Signal()
-	rf.mu.Unlock()
 	return
 }
 
@@ -397,6 +406,43 @@ type AppendEntriesReply struct {
 	Success				bool
 }
 
+func (rf *Raft) sendAppendEntries(server int) {
+	rf.mu.Lock()
+	if rf.killed() || rf.state != leader{
+		rf.mu.Unlock()
+		return
+	}
+	aeArgs := AppendEntriesArgs{
+		Term:     rf.currentTerm,
+		LeaderId: rf.me,
+	}
+	aeReply := AppendEntriesReply{
+		Term:    0,
+		Success: false,
+	}
+	rf.mu.Unlock()
+	// RPC Call
+	ok := rf.peers[server].Call("Raft.AppendEntries", &aeArgs, &aeReply)
+
+	// handle ae reply
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if !ok {
+		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. Retrying.. \n",
+			rf.me, server)
+		//go rf.sendAppendEntries(server)
+		return
+	}
+	rf.election.curTimeout = 0
+	//DPrintf("[Raft %v]: AppendEntries to Raft %v Success! Term = %v \n",
+	//	rf.me, server, rf.currentTerm)
+	if aeReply.Term > rf.currentTerm {
+		rf.currentTerm = aeReply.Term
+		rf.state = follower
+		rf.election.reset()
+	}
+}
+
 // AppendEntries RPC handler
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
@@ -416,45 +462,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 }
 
-func (rf *Raft) sendAppendEntries(server int) {
-	rf.mu.Lock()
-	if rf.killed() {
-		rf.mu.Unlock()
-		return
-	}
-	if rf.state != leader {
-		rf.mu.Unlock()
-		return
-	}
-	aeArgs := AppendEntriesArgs{
-		Term:     rf.currentTerm,
-		LeaderId: rf.me,
-	}
-	aeReply := AppendEntriesReply{
-		Term:    0,
-		Success: false,
-	}
-	rf.mu.Unlock()
-	ok := rf.peers[server].Call("Raft.AppendEntries", &aeArgs, &aeReply)
-	rf.mu.Lock()
-	if !ok {
-		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. Retrying.. \n",
-			rf.me, server)
-		//go rf.sendAppendEntries(server)
-		rf.mu.Unlock()
-		return
-	}
-	// handle ae reply
-	rf.election.curTimeout = 0
-	//DPrintf("[Raft %v]: AppendEntries to Raft %v Success! Term = %v \n",
-	//	rf.me, server, rf.currentTerm)
-	if aeReply.Term > rf.currentTerm {
-		rf.currentTerm = aeReply.Term
-		rf.state = follower
-		rf.election.reset()
-	}
-	rf.mu.Unlock()
-}
+
 
 // Start
 // the service using Raft (e.g. a k/v server) wants to start
