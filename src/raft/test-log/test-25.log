@@ -1,9 +1,0 @@
-=== RUN   TestInitialElection2A
-Test (2A): initial election ...
-  ... Passed --   4.2  3   62    7694    0
---- PASS: TestInitialElection2A (7.18s)
-=== RUN   TestReElection2A
-Test (2A): election after network failure ...
-  ... Passed --   9.1  3  172   12504    0
---- PASS: TestReElection2A (12.11s)
-PASS

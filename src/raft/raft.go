@@ -68,7 +68,7 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 	state						raftState  	// leader/follower/candidate
-	currentTerm					int			// current Term number
+	curTerm					int			// current Term number
 
 	election					election
 }
@@ -85,6 +85,7 @@ type election struct {
 	votesCond					*sync.Cond	// watch the change of votes count
 }
 
+// lock needed
 func (e *election) reset() {
 	e.timeout = getRandomTimeout()
 	e.curTimeout = 0
@@ -92,6 +93,35 @@ func (e *election) reset() {
 	e.votedFor = -1
 	e.votes = 0
 	e.respond = 0
+}
+// lock needed
+func (rf *Raft) toLeader()  {
+	DPrintf("[Raft %v]: to Leader, preState = %v, Term = %v \n",
+		rf.me, rf.state, rf.curTerm)
+	rf.state = leader
+	rf.election.reset()
+}
+// lock needed
+func (rf *Raft) toCandidate()  {
+	DPrintf("[Raft %v]: to Candidate, preState = %v, preTerm = %v \n",
+		rf.me, rf.state, rf.curTerm)
+	rf.state = candidate
+	rf.curTerm++
+	DPrintf("[Raft %v]: Election Timeout!! New Election Begins! Term = %v", rf.me, rf.curTerm)
+	rf.election.timeout = getRandomTimeout()
+	rf.election.curTimeout = 0
+	rf.election.votedFor = rf.me		// vote for myself
+	rf.election.votes = 1
+	rf.election.respond = 1
+	rf.newElection()
+}
+// lock needed
+func (rf *Raft) toFollower(term int)  {
+	DPrintf("[Raft %v]: to Follower, preState = %v, preTerm = %v, NewTerm = %v \n",
+		rf.me, rf.state, rf.curTerm, term)
+	rf.state = follower
+	rf.curTerm = term
+	rf.election.reset()
 }
 
 // timeoutLoop
@@ -108,7 +138,7 @@ func (rf *Raft) timeoutLoop() {
 		rf.election.curTimeout += 10
 		// if timeout, start a new election
 		if rf.election.curTimeout > rf.election.timeout {
-			rf.newElection()
+			rf.toCandidate()
 		}
 		rf.mu.Unlock()
 		time.Sleep(10 * time.Millisecond)
@@ -130,28 +160,26 @@ func (rf *Raft) waitForVoteLoop(term int) {
 		if rf.election.votes < half && rf.election.respond < total  {
 			rf.election.votesCond.Wait()
 		}
-		if rf.currentTerm != term {
+		if rf.curTerm != term {
 			DPrintf("[Raft %v]: Election Wakeup, but Term dont match... electionTerm = %v, curTerm = %v \n",
-				rf.me, term, rf.currentTerm)
+				rf.me, term, rf.curTerm)
 			rf.mu.Unlock()
 			return
 		}
 		DPrintf("[Raft %v]: Term = %v, Get respond = %v, votes = %v \n",
-			rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
+			rf.me, rf.curTerm, rf.election.respond, rf.election.votes)
 		if rf.election.votes >= half {
 			// win the election
 			DPrintf("[Raft %v]: Election Win!! Term = %v, Get respond = %v, votes = %v \n",
-				rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
-			rf.state = leader
-			rf.election.reset()
+				rf.me, rf.curTerm, rf.election.respond, rf.election.votes)
+			rf.toLeader()		// become Leader!!
 			rf.mu.Unlock()
 			return
 		}else {
 			// lose
-			DPrintf("[Raft %v]: Election Lose.. Term = %v, Get respond = %v, votes = %v \n",
-				rf.me, rf.currentTerm, rf.election.respond, rf.election.votes)
-			rf.state = follower
-			rf.election.reset()
+			DPrintf("[Raft %v]: Election Lose.. Trans to follower, Term = %v, Get respond = %v, votes = %v \n",
+				rf.me, rf.curTerm, rf.election.respond, rf.election.votes)
+			rf.toFollower(rf.curTerm)		// election lose, to follower
 			rf.mu.Unlock()
 			return
 		}
@@ -187,14 +215,6 @@ func (rf *Raft) AppendEntriesLoop() {
 // newElection require rf.mu.Lock()
 // call by timeoutLoop() when timeout occur
 func (rf *Raft) newElection() {
-	rf.state = candidate
-	rf.currentTerm++
-	DPrintf("[Raft %v]: Election Timeout!! New Election Begins! Term = %v", rf.me, rf.currentTerm)
-	rf.election.timeout = getRandomTimeout()
-	rf.election.curTimeout = 0
-	rf.election.votedFor = rf.me		// vote for myself
-	rf.election.votes = 1
-	rf.election.respond = 1
 
 	// broadcast RequestVote
 	for i := 0; i < len(rf.peers); i++ {
@@ -203,7 +223,7 @@ func (rf *Raft) newElection() {
 		}
 	}
 
-	go rf.waitForVoteLoop(rf.currentTerm)
+	go rf.waitForVoteLoop(rf.curTerm)
 }
 
 
@@ -217,7 +237,7 @@ func (rf *Raft) GetState() (int, bool) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	term = rf.currentTerm
+	term = rf.curTerm
 	if rf.state == leader {
 		isleader = true
 	}else {
@@ -323,7 +343,7 @@ func (rf *Raft) sendRequestVote(server int) {
 		return
 	}
 	rvArgs := RequestVoteArgs{
-		Term: rf.currentTerm,
+		Term: rf.curTerm,
 		CandidateId: rf.me,
 	}
 	rvReply := RequestVoteReply{
@@ -351,10 +371,8 @@ func (rf *Raft) sendRequestVote(server int) {
 	DPrintf("[Raft %v]: RequestVote to Raft %v Success!",
 		rf.me, server)
 	rf.election.respond++
-	if rvReply.Term > rf.currentTerm {
-		rf.currentTerm = rvReply.Term
-		rf.state = follower
-		rf.election.reset()
+	if rvReply.Term > rf.curTerm {
+		rf.toFollower(rvReply.Term)
 	}
 	if rvReply.VoteGranted {
 		DPrintf("Get One Vote!!")
@@ -376,13 +394,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 	DPrintf("[Raft %v]: RequestVote from Raft %v. myState = %v, myTerm = %v, hisTerm = %v, myVoteFor = %v \n",
-		rf.me, args.CandidateId, rf.state, rf.currentTerm, args.Term, rf.election.votedFor)
+		rf.me, args.CandidateId, rf.state, rf.curTerm, args.Term, rf.election.votedFor)
 
-	if args.Term >= rf.currentTerm {
+	if args.Term > rf.curTerm {
+		rf.toFollower(args.Term)
+
 		reply.Term = args.Term
-		rf.currentTerm = args.Term
-		rf.state = follower
-		rf.election.reset()
 		if rf.election.votedFor == -1  {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
@@ -390,7 +407,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = false
 		}
 	}else {
-		reply.Term = rf.currentTerm
+		reply.Term = rf.curTerm
 		reply.VoteGranted = false
 	}
 }
@@ -414,7 +431,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 		return
 	}
 	aeArgs := AppendEntriesArgs{
-		Term:     rf.currentTerm,
+		Term:     rf.curTerm,
 		LeaderId: rf.me,
 	}
 	aeReply := AppendEntriesReply{
@@ -437,10 +454,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 	rf.election.curTimeout = 0
 	//DPrintf("[Raft %v]: AppendEntries to Raft %v Success! Term = %v \n",
 	//	rf.me, server, rf.currentTerm)
-	if aeReply.Term > rf.currentTerm {
-		rf.currentTerm = aeReply.Term
-		rf.state = follower
-		rf.election.reset()
+	if aeReply.Term > rf.curTerm {
+		rf.toFollower(aeReply.Term)
 	}
 }
 
@@ -452,16 +467,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 	DPrintf("[Raft %v]: AppendEntries from Raft %v. myState = %v, myTerm = %v, hisTerm = %v\n",
-		rf.me, args.LeaderId, rf.state, rf.currentTerm, args.Term)
-	if args.Term >= rf.currentTerm {
-		rf.currentTerm = args.Term
-		rf.state = follower
-		rf.election.reset()
+		rf.me, args.LeaderId, rf.state, rf.curTerm, args.Term)
+	if args.Term >= rf.curTerm {
+		if args.Term > rf.curTerm {
+			rf.toFollower(args.Term)
+		}else {
+			rf.election.reset()
+		}
 		reply.Success = true
 		reply.Term = args.Term
 	}else {
 		reply.Success = false
-		reply.Term = rf.currentTerm
+		reply.Term = rf.curTerm
 	}
 
 }
@@ -508,7 +525,7 @@ func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
 	DPrintf("[Raft %v]: be killed...", rf.me)
-	time.Sleep(1*time.Second)
+	//time.Sleep(1*time.Second)
 }
 
 func (rf *Raft) killed() bool {
@@ -536,7 +553,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C).
 	rf.state = follower
-	rf.currentTerm = 0
+	rf.curTerm = 0
 	// initialize election field (2A)
 	rf.election.votesCond = sync.NewCond(&rf.mu)
 	rf.election.reset()
