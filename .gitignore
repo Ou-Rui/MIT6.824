@@ -3,3 +3,5 @@ api.key
 *-handin.tar.gz
 
 .idea/
+
+src/raft/test-log/
