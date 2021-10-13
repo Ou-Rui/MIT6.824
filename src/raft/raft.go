@@ -64,6 +64,7 @@ type Raft struct {
 	me        					int                 // this peer's index into peers[]
 	dead     				 	int32               // set by Kill()
 	leaderId					int
+	applyCh						chan ApplyMsg
 
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
@@ -289,9 +290,21 @@ func (rf *Raft) updateCommitLoop(term int) {
 			cnt = 0
 		}
 		if nextCommit > rf.logState.commitIndex && rf.logState.logs[nextCommit].Term == rf.curTerm {
+			for i := rf.logState.commitIndex + 1; i <= nextCommit; i++ {
+				applyMsg := ApplyMsg{
+					CommandValid: true,
+					Command:      rf.logState.logs[i].Command,
+					CommandIndex: i,
+				}
+				rf.applyCh <- applyMsg
+				DPrintf("[Raft %v]: Leader apply: %v",
+					rf.me, applyMsg)
+			}
+
 			rf.logState.commitIndex = nextCommit
 			DPrintf("[Raft %v]: Leader update commitIndex = %v, curTerm = %v",
 				rf.me, rf.logState.commitIndex, rf.curTerm)
+
 		}
 		rf.mu.Unlock()
 	}
@@ -634,11 +647,23 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// update commitIndex
 	if args.LeaderCommit > rf.logState.commitIndex {
+		tmpIndex := 0
 		if args.LeaderCommit > len(rf.logState.logs)-1 {
-			rf.logState.commitIndex = len(rf.logState.logs)-1
+			tmpIndex = len(rf.logState.logs)-1
 		}else {
-			rf.logState.commitIndex = args.LeaderCommit
+			tmpIndex = args.LeaderCommit
 		}
+		for i := rf.logState.commitIndex + 1; i <= tmpIndex; i++ {
+			applyMsg := ApplyMsg{
+				CommandValid: true,
+				Command:      rf.logState.logs[i].Command,
+				CommandIndex: i,
+			}
+			rf.applyCh <- applyMsg
+			DPrintf("[Raft %v]: Follower apply: %v",
+				rf.me, applyMsg)
+		}
+		rf.logState.commitIndex = tmpIndex
 		DPrintf("[Raft %v]: Follower update commitIndex = %v, curTerm = %v",
 			rf.me, rf.logState.commitIndex, rf.curTerm)
 	}
@@ -722,6 +747,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.applyCh = applyCh
 
 	// Your initialization code here (2A, 2B, 2C).
 	rf.state = follower
@@ -740,6 +766,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.logState.lastApplied = 0
 	rf.logState.nextIndex = make([]int, len(rf.peers))
 	rf.logState.matchIndex = make([]int, len(rf.peers))
+
 
 	// initialize from state persisted before a crash (2C)
 	rf.readPersist(persister.ReadRaftState())
