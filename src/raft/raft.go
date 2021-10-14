@@ -100,6 +100,9 @@ type logState struct {
 	nextIndex					[]int				// index of next log to send to each server
 	matchIndex					[]int				// highest index of log known to be replicated for each server
 	commitCond					*sync.Cond
+
+	logBuffer					[]logEntry
+	muLb						sync.Mutex
 }
 
 // log entry struct
@@ -311,16 +314,27 @@ func (rf *Raft) updateCommitLoop(term int) {
 	}
 }
 
-func (rf *Raft) leaderAppendEntry(log logEntry)  {
+func (rf *Raft) leaderAppendEntry()  {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	rf.logState.logs = append(rf.logState.logs, log)
+
+	rf.logState.muLb.Lock()
+	defer rf.logState.muLb.Unlock()
+
+	if len(rf.logState.logBuffer) == 0 {
+		DPrintf("[Raft %v]: Leader nothing to append in buffer, logs = %v",
+			rf.me, rf.logState.logs)
+		return
+	}
+
+	rf.logState.logs = append(rf.logState.logs, rf.logState.logBuffer...)
 	rf.logState.matchIndex[rf.me] = len(rf.logState.logs) - 1
 	rf.logState.nextIndex[rf.me] = len(rf.logState.logs)
-	DPrintf("[Raft %v]: Receive Command, Leader! append to log! command = %v, term = %v, index = %v",
-		rf.me, log.Command, log.Term, len(rf.logState.logs) - 1)
+	DPrintf("[Raft %v]: Leader append to log from buffer, buffer = %v",
+		rf.me, rf.logState.logBuffer)
 	DPrintf("[Raft %v]: leader logs = %v",
 		rf.me, rf.logState.logs)
+	rf.logState.logBuffer = []logEntry{}
 }
 
 // newElection require rf.mu.Lock()
@@ -527,6 +541,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.me, logFlag, args.LastLogTerm, lastLogTerm, args.LastLogIndex, lastLogIndex)
 
 	if args.Term > rf.curTerm {
+		tmpTimeout := rf.election.curTimeout
 		rf.toFollower(args.Term)
 
 		reply.Term = args.Term
@@ -534,6 +549,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
 		}else {
+			rf.election.curTimeout = tmpTimeout
 			reply.VoteGranted = false
 		}
 	}else {
@@ -708,14 +724,18 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	term, isLeader = rf.GetState()
 	if isLeader && !rf.killed() {
-		index = len(rf.logState.logs)
 		log := logEntry{
 			Command: command,
-			Term:    rf.curTerm,
+			Term:    term,
 		}
-		go rf.leaderAppendEntry(log)
-		DPrintf("[Raft %v]: Receive Command, Im Leader! Appending Log.. command = %v",
-			rf.me, command)
+		rf.logState.muLb.Lock()
+		rf.logState.logBuffer = append(rf.logState.logBuffer, log)
+		index = len(rf.logState.logs) + len(rf.logState.logBuffer) - 1
+		DPrintf("[Raft %v]: Receive Command, Im Leader! Appending Log.. command = %v, logBuffer = %v",
+			rf.me, command, rf.logState.logBuffer)
+		rf.logState.muLb.Unlock()
+		go rf.leaderAppendEntry()
+
 	}else {
 		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
 			rf.me, command)
@@ -783,7 +803,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.logState.lastApplied = 0
 	rf.logState.nextIndex = make([]int, len(rf.peers))
 	rf.logState.matchIndex = make([]int, len(rf.peers))
-
+	rf.logState.logBuffer = []logEntry{}
 
 	// initialize from state persisted before a crash (2C)
 	rf.readPersist(persister.ReadRaftState())
