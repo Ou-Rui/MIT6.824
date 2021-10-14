@@ -139,7 +139,8 @@ func (rf *Raft) toLeader()  {
 	}
 	DPrintf("[Raft %v]: reset nextIndex = %v, matchIndex = %v \n",
 		rf.me, rf.logState.nextIndex, rf.logState.matchIndex)
-
+	DPrintf("[Raft %v]: leader logs = %v \n",
+		rf.me, rf.logState.logs)
 	rf.logState.commitCond = sync.NewCond(&rf.mu)
 	go rf.updateCommitLoop(rf.curTerm)
 }
@@ -230,9 +231,9 @@ func (rf *Raft) waitForVoteLoop(term int) {
 	}
 }
 
-// AppendEntriesLoop
+// appendEntriesLoop
 // Goroutine, start by Make()
-func (rf *Raft) AppendEntriesLoop() {
+func (rf *Raft) appendEntriesLoop() {
 	for  {
 		rf.mu.Lock()
 
@@ -296,9 +297,9 @@ func (rf *Raft) updateCommitLoop(term int) {
 					Command:      rf.logState.logs[i].Command,
 					CommandIndex: i,
 				}
-				rf.applyCh <- applyMsg
 				DPrintf("[Raft %v]: Leader apply: %v",
 					rf.me, applyMsg)
+				rf.applyCh <- applyMsg
 			}
 
 			rf.logState.commitIndex = nextCommit
@@ -308,6 +309,18 @@ func (rf *Raft) updateCommitLoop(term int) {
 		}
 		rf.mu.Unlock()
 	}
+}
+
+func (rf *Raft) leaderAppendEntry(log logEntry)  {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.logState.logs = append(rf.logState.logs, log)
+	rf.logState.matchIndex[rf.me] = len(rf.logState.logs) - 1
+	rf.logState.nextIndex[rf.me] = len(rf.logState.logs)
+	DPrintf("[Raft %v]: Receive Command, Leader! append to log! command = %v, term = %v, index = %v",
+		rf.me, log.Command, log.Term, len(rf.logState.logs) - 1)
+	DPrintf("[Raft %v]: leader logs = %v",
+		rf.me, rf.logState.logs)
 }
 
 // newElection require rf.mu.Lock()
@@ -473,8 +486,8 @@ func (rf *Raft) sendRequestVote(server int) {
 	if rf.killed() || rf.state != candidate{
 		return
 	}
-	DPrintf("[Raft %v]: RequestVote to Raft %v Success!",
-		rf.me, server)
+	DPrintf("[Raft %v]: RequestVote to Raft %v Success! term = %v",
+		rf.me, server, rf.curTerm)
 	rf.election.respond++
 	if rvReply.Term > rf.curTerm {
 		rf.toFollower(rvReply.Term)
@@ -585,8 +598,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 		rf.logState.nextIndex[server] = nextLogIndex + len(entries)
 		rf.logState.matchIndex[server] = nextLogIndex + len(entries) - 1
 		rf.logState.commitCond.Signal()
-		DPrintf("[Raft %v]: AppendEntries to Raft %v Success! \n",
-			rf.me, server)
+		DPrintf("[Raft %v]: AppendEntries to Raft %v Success! myTerm = %v \n",
+			rf.me, server, rf.curTerm)
 	}else {
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed... \n",
 			rf.me, server)
@@ -624,6 +637,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}else {
 		reply.Success = false
 		reply.Term = rf.curTerm
+		return
 	}
 
 	// 2B
@@ -631,6 +645,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
 		// preLog not match
 		reply.Success = false
+		return
 	}
 
 	for i, entry := range args.Entries {
@@ -659,9 +674,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				Command:      rf.logState.logs[i].Command,
 				CommandIndex: i,
 			}
-			rf.applyCh <- applyMsg
 			DPrintf("[Raft %v]: Follower apply: %v",
 				rf.me, applyMsg)
+			rf.applyCh <- applyMsg
+
 		}
 		rf.logState.commitIndex = tmpIndex
 		DPrintf("[Raft %v]: Follower update commitIndex = %v, curTerm = %v",
@@ -692,13 +708,14 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	term, isLeader = rf.GetState()
 	if isLeader && !rf.killed() {
-		rf.logState.logs = append(rf.logState.logs, logEntry{
+		index = len(rf.logState.logs)
+		log := logEntry{
 			Command: command,
-			Term:    term,
-		})
-		index = len(rf.logState.logs) - 1
-		DPrintf("[Raft %v]: Receive Command, Leader! append to log! command = %v, term = %v, index = %v",
-			rf.me, command, term, index)
+			Term:    rf.curTerm,
+		}
+		go rf.leaderAppendEntry(log)
+		DPrintf("[Raft %v]: Receive Command, Im Leader! Appending Log.. command = %v",
+			rf.me, command)
 	}else {
 		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
 			rf.me, command)
@@ -774,12 +791,12 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	DPrintf("[Raft %v]: Initialized!", rf.me)
 
 	go rf.timeoutLoop()
-	go rf.AppendEntriesLoop()
+	go rf.appendEntriesLoop()
 
 	return rf
 }
 
 // getRandomTimeout generate random timeout between [500 ~ 1000) ms
 func getRandomTimeout() int {
-	return rand.Intn(1000) + 1000
+	return rand.Intn(500) + 500
 }
