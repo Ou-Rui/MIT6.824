@@ -571,6 +571,11 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term 				int
 	Success				bool
+
+	// fast backup
+	XTerm				int
+	XIndex				int
+	XLen				int
 }
 
 func (rf *Raft) sendAppendEntries(server int) {
@@ -583,7 +588,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 	preLogIndex := nextLogIndex - 1
 	preLogTerm := rf.logState.logs[preLogIndex].Term
 	entries := rf.logState.logs[nextLogIndex : ]
-	aeArgs := AppendEntriesArgs{
+	args := AppendEntriesArgs{
 		Term:         rf.curTerm,
 		LeaderId:     rf.me,
 		PreLogIndex:  preLogIndex,
@@ -591,41 +596,60 @@ func (rf *Raft) sendAppendEntries(server int) {
 		Entries:      entries,
 		LeaderCommit: rf.logState.commitIndex,
 	}
-	aeReply := AppendEntriesReply{
+	reply := AppendEntriesReply{
 		Term:    0,
 		Success: false,
 	}
 	rf.mu.Unlock()
 	// RPC Call
-	ok := rf.peers[server].Call("Raft.AppendEntries", &aeArgs, &aeReply)
+	ok := rf.peers[server].Call("Raft.AppendEntries", &args, &reply)
 
 	// handle ae reply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if !ok {
-		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. myState = %v \n",
+		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. no response.. myState = %v \n",
 			rf.me, server, rf.state)
 		//go rf.sendAppendEntries(server)
 		return
 	}
 	//rf.election.curTimeout = 0
 
-	if aeReply.Success {
+	if reply.Success {
 		rf.logState.nextIndex[server] = nextLogIndex + len(entries)
 		rf.logState.matchIndex[server] = nextLogIndex + len(entries) - 1
 		rf.logState.commitCond.Signal()
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Success! myTerm = %v \n",
 			rf.me, server, rf.curTerm)
 	}else {
-		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed... \n",
-			rf.me, server)
-		if aeReply.Term > rf.curTerm {
+		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. myState = %v, myTerm = %v, reply.Term = %v \n",
+			rf.me, server, rf.state, rf.curTerm, reply.Term)
+		if reply.Term > rf.curTerm {
 			DPrintf("[Raft %v]: myTerm = %v, hisTerm = %v, toFollower() \n",
-				rf.me, rf.curTerm, aeReply.Term)
-			rf.toFollower(aeReply.Term)
+				rf.me, rf.curTerm, reply.Term)
+			rf.toFollower(reply.Term)
 		}else {
 			rf.logState.nextIndex[server]--
-			DPrintf("[Raft %v]: still Leader, Log Matching error, new nextIndex = %v\n",
+			// fast backup
+			if reply.XTerm == -1 {
+				// if follower doesn't have a log in nextIndex, nextIndex = XLen
+				rf.logState.nextIndex[server] = reply.XLen
+			}else {
+				i := rf.logState.nextIndex[server] - 1
+				for ; i >= 0; i-- {
+					if rf.logState.logs[i].Term == reply.XTerm {
+						// if leader has a log in XTerm, nextIndex = index of last log in XTerm
+						rf.logState.nextIndex[server] = i
+						break
+					}else if rf.logState.logs[i].Term < reply.XTerm {
+						// if leader doesn't have a log in XTerm, nextIndex = XIndex
+						rf.logState.nextIndex[server] = reply.XIndex
+						break
+					}
+				}
+			}
+
+			DPrintf("[Raft %v]: Leader, Log Matching error, new nextIndex = %v\n",
 				rf.me, rf.logState.nextIndex)
 		}
 	}
@@ -657,13 +681,34 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// 2B
+	// Log Matching
 	if len(rf.logState.logs) <= args.PreLogIndex ||
 		rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
 		// preLog not match
 		reply.Success = false
+		// fast backup
+		if len(rf.logState.logs) <= args.PreLogIndex {
+			// don't even have the log
+			reply.XTerm = -1
+			reply.XIndex = -1
+		}else {
+			// have conflicting log in diff term
+			reply.XTerm = rf.logState.logs[args.PreLogIndex].Term
+			i := len(rf.logState.logs)-1
+			for ;i >= 0;i-- {
+				if rf.logState.logs[i].Term != reply.XTerm {
+					break
+				}
+			}
+			reply.XIndex = i+1
+		}
+		reply.XLen = len(rf.logState.logs)
+		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
+			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
 		return
 	}
 
+	// delete/append logs
 	for i, entry := range args.Entries {
 		if len(rf.logState.logs) - 1 >= args.PreLogIndex + i + 1 &&
 			rf.logState.logs[args.PreLogIndex + i + 1].Term != entry.Term {
