@@ -469,15 +469,15 @@ func (rf *Raft) sendRequestVote(server int) {
 		rf.mu.Unlock()
 		return
 	}
-	rvArgs := RequestVoteArgs{
+	args := &RequestVoteArgs{
 		Term:         rf.curTerm,
 		CandidateId:  rf.me,
 		LastLogIndex: len(rf.logState.logs) - 1,
 		LastLogTerm:  rf.logState.logs[len(rf.logState.logs) - 1].Term,
 	}
 	DPrintf("[Raft %v]: send RequestVote to Raft %v, args = %v \n",
-		rf.me, server, rvArgs)
-	rvReply := RequestVoteReply{
+		rf.me, server, args)
+	reply := &RequestVoteReply{
 		Term:        0,
 		VoteGranted: false,
 	}
@@ -485,7 +485,7 @@ func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Unlock()
 
 	// RPC Call
-	ok := rf.peers[server].Call("Raft.RequestVote", &rvArgs, &rvReply)
+	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 
 	// handle reply
 	rf.mu.Lock()
@@ -503,12 +503,11 @@ func (rf *Raft) sendRequestVote(server int) {
 	DPrintf("[Raft %v]: RequestVote to Raft %v Success! term = %v",
 		rf.me, server, rf.curTerm)
 	rf.election.respond++
-	if rvReply.Term > rf.curTerm {
-		rf.toFollower(rvReply.Term)
+	if reply.Term > rf.curTerm {
+		rf.toFollower(reply.Term)
 	}
-	if rvReply.VoteGranted {
+	if reply.VoteGranted {
 		DPrintf("Get One Vote!!")
-		// get one vote!
 		rf.election.votes++
 	}
 	DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
@@ -531,14 +530,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	DPrintf("[Raft %v]: RequestVote from Raft %v. myState = %v, myTerm = %v, hisTerm = %v, myVoteFor = %v \n",
 		rf.me, args.CandidateId, rf.state, rf.curTerm, args.Term, rf.election.votedFor)
 	// leader restriction (2B)
-	lastLogIndex := len(rf.logState.logs)-1
-	lastLogTerm := rf.logState.logs[lastLogIndex].Term
-	logFlag := false
-	if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex) {
-		logFlag = true
-	}
-	DPrintf("[Raft %v]: logFlag = %v, hisLastLogTerm = %v, myLastLogTerm = %v, hisLastLogIndex = %v, myLastLogIndex = %v \n",
-		rf.me, logFlag, args.LastLogTerm, lastLogTerm, args.LastLogIndex, lastLogIndex)
+	logFlag := rf.leaderRestriction(args)
 
 	if args.Term > rf.curTerm {
 		tmpTimeout := rf.election.curTimeout
@@ -556,6 +548,20 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.Term = rf.curTerm
 		reply.VoteGranted = false
 	}
+}
+
+// leaderRestriction, called by RequestVote() RPC handler
+// determine whether the candidate is qualified for a leader, according to logs
+func (rf *Raft) leaderRestriction(args *RequestVoteArgs) bool {
+	lastLogIndex := len(rf.logState.logs)-1
+	lastLogTerm := rf.logState.logs[lastLogIndex].Term
+	logFlag := false
+	if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex) {
+		logFlag = true
+	}
+	DPrintf("[Raft %v]: logFlag = %v, hisLastLogTerm = %v, myLastLogTerm = %v, hisLastLogIndex = %v, myLastLogIndex = %v \n",
+		rf.me, logFlag, args.LastLogTerm, lastLogTerm, args.LastLogIndex, lastLogIndex)
+	return logFlag
 }
 
 type AppendEntriesArgs struct {
@@ -588,7 +594,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 	preLogIndex := nextLogIndex - 1
 	preLogTerm := rf.logState.logs[preLogIndex].Term
 	entries := rf.logState.logs[nextLogIndex : ]
-	args := AppendEntriesArgs{
+	args := &AppendEntriesArgs{
 		Term:         rf.curTerm,
 		LeaderId:     rf.me,
 		PreLogIndex:  preLogIndex,
@@ -596,13 +602,13 @@ func (rf *Raft) sendAppendEntries(server int) {
 		Entries:      entries,
 		LeaderCommit: rf.logState.commitIndex,
 	}
-	reply := AppendEntriesReply{
+	reply := &AppendEntriesReply{
 		Term:    0,
 		Success: false,
 	}
 	rf.mu.Unlock()
 	// RPC Call
-	ok := rf.peers[server].Call("Raft.AppendEntries", &args, &reply)
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 
 	// handle ae reply
 	rf.mu.Lock()
@@ -610,14 +616,18 @@ func (rf *Raft) sendAppendEntries(server int) {
 	if !ok {
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. no response.. myState = %v \n",
 			rf.me, server, rf.state)
-		//go rf.sendAppendEntries(server)
 		return
 	}
-	//rf.election.curTimeout = 0
 
+	rf.handleAeReply(server, args, reply)
+}
+
+// handleAeReply, call by sendAppendEntries() when RPC return with reply
+// update nextIndex[], matchIndex[]
+func (rf *Raft) handleAeReply(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	if reply.Success {
-		rf.logState.nextIndex[server] = nextLogIndex + len(entries)
-		rf.logState.matchIndex[server] = nextLogIndex + len(entries) - 1
+		rf.logState.nextIndex[server] = args.PreLogIndex + 1 + len(args.Entries)
+		rf.logState.matchIndex[server] = args.PreLogIndex + 1 + len(args.Entries) - 1
 		rf.logState.commitCond.Signal()
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Success! myTerm = %v \n",
 			rf.me, server, rf.curTerm)
@@ -629,31 +639,32 @@ func (rf *Raft) sendAppendEntries(server int) {
 				rf.me, rf.curTerm, reply.Term)
 			rf.toFollower(reply.Term)
 		}else {
-			rf.logState.nextIndex[server]--
-			// fast backup
-			if reply.XTerm == -1 {
-				// if follower doesn't have a log in nextIndex, nextIndex = XLen
-				rf.logState.nextIndex[server] = reply.XLen
-			}else {
-				i := rf.logState.nextIndex[server] - 1
-				for ; i >= 0; i-- {
-					if rf.logState.logs[i].Term == reply.XTerm {
-						// if leader has a log in XTerm, nextIndex = index of last log in XTerm
-						rf.logState.nextIndex[server] = i
-						break
-					}else if rf.logState.logs[i].Term < reply.XTerm {
-						// if leader doesn't have a log in XTerm, nextIndex = XIndex
-						rf.logState.nextIndex[server] = reply.XIndex
-						break
-					}
-				}
-			}
-
-			DPrintf("[Raft %v]: Leader, Log Matching error, new nextIndex = %v\n",
-				rf.me, rf.logState.nextIndex)
+			rf.fastBackup(server, reply)
 		}
 	}
+}
 
+func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
+	// fast backup
+	if reply.XTerm == -1 {
+		// if follower doesn't have a log in nextIndex, nextIndex = XLen
+		rf.logState.nextIndex[server] = reply.XLen
+	}else {
+		i := rf.logState.nextIndex[server] - 1
+		for ; i >= 0; i-- {
+			if rf.logState.logs[i].Term == reply.XTerm {
+				// if leader has a log in XTerm, nextIndex = index of last log in XTerm
+				rf.logState.nextIndex[server] = i
+				break
+			}else if rf.logState.logs[i].Term < reply.XTerm {
+				// if leader doesn't have a log in XTerm, nextIndex = XIndex
+				rf.logState.nextIndex[server] = reply.XIndex
+				break
+			}
+		}
+	}
+	DPrintf("[Raft %v]: Leader, Log Matching error, new nextIndex = %v\n",
+		rf.me, rf.logState.nextIndex)
 }
 
 // AppendEntries RPC handler
@@ -682,6 +693,21 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// 2B
 	// Log Matching
+	ok := rf.logMatching(args, reply)
+	if !ok {
+		return
+	}
+	// delete/append logs
+	rf.updateLogs(args)
+	// update commitIndex
+	rf.followerCommitAndApply(args)
+
+}
+
+// logMatching, called by AppendEntries() RPC handler
+// check for preLog matching, setup XTerm, XIndex, XLen in reply
+func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := true
 	if len(rf.logState.logs) <= args.PreLogIndex ||
 		rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
 		// preLog not match
@@ -705,10 +731,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.XLen = len(rf.logState.logs)
 		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
 			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
-		return
+		ok = false
 	}
+	return ok
+}
 
-	// delete/append logs
+// updateLogs, called by AppendEntries() RPC handler
+// append / delete logs according to AppendEntriesArgs
+func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 	for i, entry := range args.Entries {
 		if len(rf.logState.logs) - 1 >= args.PreLogIndex + i + 1 &&
 			rf.logState.logs[args.PreLogIndex + i + 1].Term != entry.Term {
@@ -720,13 +750,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		DPrintf("[Raft %v]: all logs appended, new logs = %v",
 			rf.me, rf.logState.logs)
 	}
+}
 
-	// update commitIndex
+// followerCommitAndApply, called by AppendEntries() RPC handler
+// update commitIndex, apply command
+func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 	if args.LeaderCommit > rf.logState.commitIndex {
 		tmpIndex := 0
 		if args.LeaderCommit > len(rf.logState.logs)-1 {
-			tmpIndex = len(rf.logState.logs)-1
-		}else {
+			tmpIndex = len(rf.logState.logs) - 1
+		} else {
 			tmpIndex = args.LeaderCommit
 		}
 		for i := rf.logState.commitIndex + 1; i <= tmpIndex; i++ {
@@ -738,7 +771,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			DPrintf("[Raft %v]: Follower apply: %v",
 				rf.me, applyMsg)
 			rf.applyCh <- applyMsg
-
 		}
 		rf.logState.commitIndex = tmpIndex
 		DPrintf("[Raft %v]: Follower update commitIndex = %v, curTerm = %v",
