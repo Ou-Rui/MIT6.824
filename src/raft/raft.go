@@ -18,8 +18,10 @@ package raft
 //
 
 import (
+	"bytes"
 	"math"
 	"math/rand"
+	"mymr/src/labgob"
 	"sync"
 	"time"
 )
@@ -92,9 +94,9 @@ type election struct {
 
 // logState related info, a part of Raft (2B)
 type logState struct {
-	logs						[]logEntry				// slice of log entries
-	commitIndex					int					// highest index of logs that has been committed
-	lastApplied					int					// highest index of logs that applied to state machine
+	Logs        []logEntry // slice of log entries
+	commitIndex int        // highest index of Logs that has been committed
+	lastApplied int        // highest index of Logs that applied to state machine
 
 	// valid when rf.state == leader
 	nextIndex					[]int				// index of next log to send to each server
@@ -112,11 +114,16 @@ type logEntry struct {
 }
 
 // lock needed
-func (e *election) reset() {
+func (rf *Raft) resetElectionState() {
+	e := &rf.election
 	e.timeout = getRandomTimeout()
 	e.curTimeout = 0
 
-	e.votedFor = -1
+	if e.votedFor != -1 {
+		e.votedFor = -1
+		rf.persist()
+	}
+
 	e.votes = 0
 	e.respond = 0
 
@@ -128,13 +135,13 @@ func (rf *Raft) toLeader()  {
 		rf.me, rf.state, rf.curTerm)
 	rf.state = leader
 	rf.leaderId = rf.me
-	rf.election.reset()
+	rf.resetElectionState()
 
 
 	// reset nextIndex[] and matchIndex[]
 	rf.logState.nextIndex = make([]int, len(rf.peers))
 	for i := range rf.logState.nextIndex {
-		rf.logState.nextIndex[i] = len(rf.logState.logs)
+		rf.logState.nextIndex[i] = len(rf.logState.Logs)
 	}
 	rf.logState.matchIndex = make([]int, len(rf.peers))
 	for i := range rf.logState.matchIndex {
@@ -142,8 +149,8 @@ func (rf *Raft) toLeader()  {
 	}
 	DPrintf("[Raft %v]: reset nextIndex = %v, matchIndex = %v \n",
 		rf.me, rf.logState.nextIndex, rf.logState.matchIndex)
-	DPrintf("[Raft %v]: leader logs = %v \n",
-		rf.me, rf.logState.logs)
+	DPrintf("[Raft %v]: leader Logs = %v \n",
+		rf.me, rf.logState.Logs)
 	rf.logState.commitCond = sync.NewCond(&rf.mu)
 	go rf.updateCommitLoop(rf.curTerm)
 }
@@ -159,7 +166,10 @@ func (rf *Raft) toCandidate()  {
 	rf.election.votedFor = rf.me		// vote for myself
 	rf.election.votes = 1
 	rf.election.respond = 1
+
 	rf.newElection()
+
+	rf.persist()
 }
 // lock needed
 func (rf *Raft) toFollower(term int)  {
@@ -167,7 +177,9 @@ func (rf *Raft) toFollower(term int)  {
 		rf.me, rf.state, rf.curTerm, term)
 	rf.state = follower
 	rf.curTerm = term
-	rf.election.reset()
+	rf.resetElectionState()
+
+	rf.persist()
 }
 
 // timeoutLoop
@@ -293,11 +305,11 @@ func (rf *Raft) updateCommitLoop(term int) {
 			}
 			cnt = 0
 		}
-		if nextCommit > rf.logState.commitIndex && rf.logState.logs[nextCommit].Term == rf.curTerm {
+		if nextCommit > rf.logState.commitIndex && rf.logState.Logs[nextCommit].Term == rf.curTerm {
 			for i := rf.logState.commitIndex + 1; i <= nextCommit; i++ {
 				applyMsg := ApplyMsg{
 					CommandValid: true,
-					Command:      rf.logState.logs[i].Command,
+					Command:      rf.logState.Logs[i].Command,
 					CommandIndex: i,
 				}
 				DPrintf("[Raft %v]: Leader apply: %v",
@@ -322,19 +334,21 @@ func (rf *Raft) leaderAppendEntry()  {
 	defer rf.logState.muLb.Unlock()
 
 	if len(rf.logState.logBuffer) == 0 {
-		DPrintf("[Raft %v]: Leader nothing to append in buffer, logs = %v",
-			rf.me, rf.logState.logs)
+		DPrintf("[Raft %v]: Leader nothing to append in buffer, Logs = %v",
+			rf.me, rf.logState.Logs)
 		return
 	}
 
-	rf.logState.logs = append(rf.logState.logs, rf.logState.logBuffer...)
-	rf.logState.matchIndex[rf.me] = len(rf.logState.logs) - 1
-	rf.logState.nextIndex[rf.me] = len(rf.logState.logs)
+	rf.logState.Logs = append(rf.logState.Logs, rf.logState.logBuffer...)
+	rf.logState.matchIndex[rf.me] = len(rf.logState.Logs) - 1
+	rf.logState.nextIndex[rf.me] = len(rf.logState.Logs)
 	DPrintf("[Raft %v]: Leader append to log from buffer, buffer = %v",
 		rf.me, rf.logState.logBuffer)
-	DPrintf("[Raft %v]: leader logs = %v",
-		rf.me, rf.logState.logs)
+	DPrintf("[Raft %v]: leader Logs = %v",
+		rf.me, rf.logState.Logs)
 	rf.logState.logBuffer = []logEntry{}
+
+	rf.persist()
 }
 
 // newElection require rf.mu.Lock()
@@ -385,9 +399,18 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+
+	writer := new(bytes.Buffer)
+	encoder := labgob.NewEncoder(writer)
+	encoder.Encode(rf.curTerm)
+	encoder.Encode(rf.election.votedFor)
+	encoder.Encode(rf.logState.Logs)
+	data := writer.Bytes()
+	rf.persister.SaveRaftState(data)
+	DPrintf("[Raft %v]: persist()", rf.me)
 }
 
-//
+// readPersist, called by Make() when reboot
 // restore previously persisted state.
 //
 func (rf *Raft) readPersist(data []byte) {
@@ -407,6 +430,29 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+	reader := bytes.NewBuffer(data)
+	decoder := labgob.NewDecoder(reader)
+	var curTerm, votedFor int
+	var logs []logEntry
+	if decoder.Decode(&curTerm) != nil ||
+		decoder.Decode(&votedFor) != nil ||
+		decoder.Decode(&logs) != nil {
+		DPrintf("[Raft %v]: read persister error...", rf.me)
+	}else {
+		rf.curTerm = curTerm
+		rf.election.votedFor = votedFor
+		if len(logs) == 0 {
+			logs = append(logs, logEntry{
+				Command: nil,
+				Term:    0,
+			})
+		}
+		rf.logState.Logs = logs
+	}
+
+	DPrintf("[Raft %v]: read persistence, curTerm = %v, votedFor = %v, Logs = %v",
+		rf.me, rf.curTerm, rf.election.votedFor, rf.logState.Logs)
+	rf.persist()
 }
 
 // RequestVoteArgs
@@ -472,8 +518,8 @@ func (rf *Raft) sendRequestVote(server int) {
 	args := &RequestVoteArgs{
 		Term:         rf.curTerm,
 		CandidateId:  rf.me,
-		LastLogIndex: len(rf.logState.logs) - 1,
-		LastLogTerm:  rf.logState.logs[len(rf.logState.logs) - 1].Term,
+		LastLogIndex: len(rf.logState.Logs) - 1,
+		LastLogTerm:  rf.logState.Logs[len(rf.logState.Logs) - 1].Term,
 	}
 	DPrintf("[Raft %v]: send RequestVote to Raft %v, args = %v \n",
 		rf.me, server, args)
@@ -540,6 +586,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if rf.election.votedFor == -1 && logFlag {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
+			rf.persist()
 		}else {
 			rf.election.curTimeout = tmpTimeout
 			reply.VoteGranted = false
@@ -551,10 +598,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 // leaderRestriction, called by RequestVote() RPC handler
-// determine whether the candidate is qualified for a leader, according to logs
+// determine whether the candidate is qualified for a leader, according to Logs
 func (rf *Raft) leaderRestriction(args *RequestVoteArgs) bool {
-	lastLogIndex := len(rf.logState.logs)-1
-	lastLogTerm := rf.logState.logs[lastLogIndex].Term
+	lastLogIndex := len(rf.logState.Logs)-1
+	lastLogTerm := rf.logState.Logs[lastLogIndex].Term
 	logFlag := false
 	if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex) {
 		logFlag = true
@@ -592,8 +639,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 	}
 	nextLogIndex := rf.logState.nextIndex[server]
 	preLogIndex := nextLogIndex - 1
-	preLogTerm := rf.logState.logs[preLogIndex].Term
-	entries := rf.logState.logs[nextLogIndex : ]
+	preLogTerm := rf.logState.Logs[preLogIndex].Term
+	entries := rf.logState.Logs[nextLogIndex : ]
 	args := &AppendEntriesArgs{
 		Term:         rf.curTerm,
 		LeaderId:     rf.me,
@@ -652,11 +699,11 @@ func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
 	}else {
 		i := rf.logState.nextIndex[server] - 1
 		for ; i >= 0; i-- {
-			if rf.logState.logs[i].Term == reply.XTerm {
+			if rf.logState.Logs[i].Term == reply.XTerm {
 				// if leader has a log in XTerm, nextIndex = index of last log in XTerm
 				rf.logState.nextIndex[server] = i
 				break
-			}else if rf.logState.logs[i].Term < reply.XTerm {
+			}else if rf.logState.Logs[i].Term < reply.XTerm {
 				// if leader doesn't have a log in XTerm, nextIndex = XIndex
 				rf.logState.nextIndex[server] = reply.XIndex
 				break
@@ -680,7 +727,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if args.Term > rf.curTerm {
 			rf.toFollower(args.Term)
 		}else {
-			rf.election.reset()
+			rf.resetElectionState()
 		}
 		rf.leaderId = args.LeaderId
 		reply.Success = true
@@ -697,7 +744,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if !ok {
 		return
 	}
-	// delete/append logs
+	// delete/append Logs
 	rf.updateLogs(args)
 	// update commitIndex
 	rf.followerCommitAndApply(args)
@@ -708,27 +755,27 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // check for preLog matching, setup XTerm, XIndex, XLen in reply
 func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := true
-	if len(rf.logState.logs) <= args.PreLogIndex ||
-		rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
+	if len(rf.logState.Logs) <= args.PreLogIndex ||
+		rf.logState.Logs[args.PreLogIndex].Term != args.PreLogTerm {
 		// preLog not match
 		reply.Success = false
 		// fast backup
-		if len(rf.logState.logs) <= args.PreLogIndex {
+		if len(rf.logState.Logs) <= args.PreLogIndex {
 			// don't even have the log
 			reply.XTerm = -1
 			reply.XIndex = -1
 		}else {
 			// have conflicting log in diff term
-			reply.XTerm = rf.logState.logs[args.PreLogIndex].Term
-			i := len(rf.logState.logs)-1
+			reply.XTerm = rf.logState.Logs[args.PreLogIndex].Term
+			i := len(rf.logState.Logs)-1
 			for ;i >= 0;i-- {
-				if rf.logState.logs[i].Term != reply.XTerm {
+				if rf.logState.Logs[i].Term != reply.XTerm {
 					break
 				}
 			}
 			reply.XIndex = i+1
 		}
-		reply.XLen = len(rf.logState.logs)
+		reply.XLen = len(rf.logState.Logs)
 		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
 			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
 		ok = false
@@ -737,19 +784,20 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 }
 
 // updateLogs, called by AppendEntries() RPC handler
-// append / delete logs according to AppendEntriesArgs
+// append / delete Logs according to AppendEntriesArgs
 func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 	for i, entry := range args.Entries {
-		if len(rf.logState.logs) - 1 >= args.PreLogIndex + i + 1 &&
-			rf.logState.logs[args.PreLogIndex + i + 1].Term != entry.Term {
-			rf.logState.logs = rf.logState.logs[ : args.PreLogIndex + i + 1]
-			DPrintf("[Raft %v]: delete conflict logs, new logs = %v",
-				rf.me, rf.logState.logs)
+		if len(rf.logState.Logs) - 1 >= args.PreLogIndex + i + 1 &&
+			rf.logState.Logs[args.PreLogIndex + i + 1].Term != entry.Term {
+			rf.logState.Logs = rf.logState.Logs[ : args.PreLogIndex + i + 1]
+			DPrintf("[Raft %v]: delete conflict Logs, new Logs = %v",
+				rf.me, rf.logState.Logs)
 		}
-		rf.logState.logs = append(rf.logState.logs, entry)
-		DPrintf("[Raft %v]: all logs appended, new logs = %v",
-			rf.me, rf.logState.logs)
+		rf.logState.Logs = append(rf.logState.Logs, entry)
+		DPrintf("[Raft %v]: all Logs appended, new Logs = %v",
+			rf.me, rf.logState.Logs)
 	}
+	rf.persist()
 }
 
 // followerCommitAndApply, called by AppendEntries() RPC handler
@@ -757,15 +805,15 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 	if args.LeaderCommit > rf.logState.commitIndex {
 		tmpIndex := 0
-		if args.LeaderCommit > len(rf.logState.logs)-1 {
-			tmpIndex = len(rf.logState.logs) - 1
+		if args.LeaderCommit > len(rf.logState.Logs)-1 {
+			tmpIndex = len(rf.logState.Logs) - 1
 		} else {
 			tmpIndex = args.LeaderCommit
 		}
 		for i := rf.logState.commitIndex + 1; i <= tmpIndex; i++ {
 			applyMsg := ApplyMsg{
 				CommandValid: true,
-				Command:      rf.logState.logs[i].Command,
+				Command:      rf.logState.Logs[i].Command,
 				CommandIndex: i,
 			}
 			DPrintf("[Raft %v]: Follower apply: %v",
@@ -807,7 +855,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		}
 		rf.logState.muLb.Lock()
 		rf.logState.logBuffer = append(rf.logState.logBuffer, log)
-		index = len(rf.logState.logs) + len(rf.logState.logBuffer) - 1
+		index = len(rf.logState.Logs) + len(rf.logState.logBuffer) - 1
 		DPrintf("[Raft %v]: Receive Command, Im Leader! Appending Log.. command = %v, logBuffer = %v",
 			rf.me, command, rf.logState.logBuffer)
 		rf.logState.muLb.Unlock()
@@ -835,7 +883,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 func (rf *Raft) Kill() {
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
-	DPrintf("[Raft %v]: be killed... logs = %v", rf.me, rf.logState.logs)
+	DPrintf("[Raft %v]: be killed... Logs = %v", rf.me, rf.logState.Logs)
 	//time.Sleep(1*time.Second)
 }
 
@@ -868,11 +916,11 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.curTerm = 0
 	// initialize election fields (2A)
 	rf.election.votesCond = sync.NewCond(&rf.mu)
-	rf.election.reset()
+	rf.resetElectionState()
 
 	// initialize logState fields (2B)
-	rf.logState.logs = make([]logEntry, 0)
-	rf.logState.logs = append(rf.logState.logs, logEntry{
+	rf.logState.Logs = make([]logEntry, 0)
+	rf.logState.Logs = append(rf.logState.Logs, logEntry{
 		Command: nil,
 		Term:    0,
 	})
