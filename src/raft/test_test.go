@@ -692,11 +692,11 @@ func TestFigure82C(t *testing.T) {
 	cfg.one(rand.Int(), 1, true)
 
 	nup := servers
-	for iters := 0; iters < 1000; iters++ {
+	for iters := 0; iters < 1000; iters++ {   //1000
 		leader := -1
 		for i := 0; i < servers; i++ {
 			if cfg.rafts[i] != nil {
-				_, _, ok := cfg.rafts[i].Start(rand.Int())
+				_, _, ok := cfg.rafts[i].Start(rand.Int())  // rand.Int()
 				if ok {
 					leader = i
 				}
@@ -747,8 +747,8 @@ func TestUnreliableAgree2C(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for iters := 1; iters < 50; iters++ {
-		for j := 0; j < 4; j++ {
+	for iters := 1; iters < 2; iters++ {				// 50
+		for j := 0; j < 1; j++ {						// 4
 			wg.Add(1)
 			go func(iters, j int) {
 				defer wg.Done()

@@ -769,7 +769,7 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 		}else {
 			// have conflicting log in diff term
 			reply.XTerm = rf.logState.logs[args.PreLogIndex].Term
-			i := len(rf.logState.logs)-1
+			i := args.PreLogIndex
 			for ;i >= 0;i-- {
 				if rf.logState.logs[i].Term != reply.XTerm {
 					break
@@ -864,8 +864,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		go rf.leaderAppendEntry()
 
 	}else {
-		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
-			rf.me, command)
+		//DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
+		//	rf.me, command)
 	}
 
 	return index, term, isLeader
