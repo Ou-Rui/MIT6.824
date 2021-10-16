@@ -89,7 +89,7 @@ type election struct {
 	votes						int			// votes count, valid for state = candidate
 	respond						int			// respond count, valid for state = candidate
 	votesCond					*sync.Cond	// watch the change of votes count
-	votesSendWg					*sync.WaitGroup
+	//votesSendWg					*sync.WaitGroup
 }
 
 // logState related info, a part of Raft (2B)
@@ -127,7 +127,7 @@ func (rf *Raft) resetElectionState() {
 	e.votes = 0
 	e.respond = 0
 
-	e.votesSendWg = &sync.WaitGroup{}
+	//e.votesSendWg = &sync.WaitGroup{}
 }
 // lock needed
 func (rf *Raft) toLeader()  {
@@ -167,7 +167,7 @@ func (rf *Raft) toCandidate()  {
 	rf.election.votes = 1
 	rf.election.respond = 1
 
-	rf.newElection()
+	go rf.newElection(rf.curTerm)
 
 	rf.persist()
 }
@@ -206,7 +206,7 @@ func (rf *Raft) timeoutLoop() {
 // waitForVoteLoop
 // Goroutine, start by newElection()
 func (rf *Raft) waitForVoteLoop(term int) {
-	rf.election.votesSendWg.Wait()
+	//rf.election.votesSendWg.Wait()
 	for  {
 		rf.mu.Lock()
 		if rf.killed() || rf.state != candidate {
@@ -216,12 +216,17 @@ func (rf *Raft) waitForVoteLoop(term int) {
 		total := len(rf.peers)
 		half := int(math.Ceil(float64(total) / 2))
 		//DPrintf("total = %v, half = %v", total, half)
-		if rf.election.votes < half && rf.election.respond < total  {
+		for rf.election.votes < half && rf.election.respond < total  {
 			rf.election.votesCond.Wait()
 		}
 		if rf.curTerm != term {
 			DPrintf("[Raft %v]: Election Wakeup, but Term dont match... electionTerm = %v, curTerm = %v \n",
 				rf.me, term, rf.curTerm)
+			//if rf.state == candidate {
+			//	rf.state = follower
+			//	rf.election.votes = 0
+			//	rf.election.respond = 0
+			//}
 			rf.mu.Unlock()
 			return
 		}
@@ -353,12 +358,17 @@ func (rf *Raft) leaderAppendEntry()  {
 
 // newElection require rf.mu.Lock()
 // call by timeoutLoop() when timeout occur
-func (rf *Raft) newElection() {
-
+func (rf *Raft) newElection(term int) {
+	//if rf.killed() || rf.state != candidate || rf.curTerm != term {
+	//	DPrintf("[Raft %v]: stop sending RequestVotes, eleTerm = %v, curTerm = %v, state = %v",
+	//		rf.me, term, rf.curTerm, rf.state)
+	//	rf.mu.Unlock()
+	//	return
+	//}
 	// broadcast RequestVote
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			rf.election.votesSendWg.Add(1)
+			//rf.election.votesSendWg.Add(1)
 			go rf.sendRequestVote(i)
 		}
 	}
@@ -513,7 +523,7 @@ type RequestVoteReply struct {
 // Goroutine
 func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Lock()
-	if rf.killed() || rf.state != candidate{
+	if rf.killed() || rf.state != candidate {
 		rf.mu.Unlock()
 		return
 	}
@@ -529,7 +539,8 @@ func (rf *Raft) sendRequestVote(server int) {
 		Term:        0,
 		VoteGranted: false,
 	}
-	rf.election.votesSendWg.Done()
+	//rf.election.votesSendWg.Done()
+
 	rf.mu.Unlock()
 
 	// RPC Call
@@ -539,11 +550,9 @@ func (rf *Raft) sendRequestVote(server int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	if !ok {
-		//DPrintf("[Raft %v]: RequestVote to Raft %v Failed.. Retrying.. \n",
-		//	rf.me, server)
-		//go rf.sendRequestVote(server)
-		//rf.mu.Unlock()
-		//return
+		DPrintf("[Raft %v]: RequestVote to Raft %v Failed.. no response.. \n",
+			rf.me, server)
+		return
 	}
 	if rf.killed() || rf.state != candidate{
 		return
@@ -553,12 +562,16 @@ func (rf *Raft) sendRequestVote(server int) {
 	rf.election.respond++
 	if reply.Term > rf.curTerm {
 		rf.toFollower(reply.Term)
+	}else if reply.Term < rf.curTerm {
+
+	}else if reply.Term == rf.curTerm {
+		if reply.VoteGranted {
+			DPrintf("Get One Vote!!")
+			rf.election.votes++
+		}
+		DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
 	}
-	if reply.VoteGranted {
-		DPrintf("Get One Vote!!")
-		rf.election.votes++
-	}
-	DPrintf("respond = %v, votes = %v \n", rf.election.respond, rf.election.votes)
+
 	rf.election.votesCond.Broadcast()
 	return
 }
@@ -582,12 +595,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if args.Term > rf.curTerm {
 		tmpTimeout := rf.election.curTimeout
+
 		rf.toFollower(args.Term)
 
 		reply.Term = args.Term
-		if rf.election.votedFor == -1 && logFlag {
+		if (rf.election.votedFor == -1 || rf.election.votedFor == args.CandidateId) && logFlag {
 			reply.VoteGranted = true
 			rf.election.votedFor = args.CandidateId
+			DPrintf("[Raft %v]: Vote for you Raft %v \n",
+				rf.me, args.CandidateId)
 			rf.persist()
 		}else {
 			rf.election.curTimeout = tmpTimeout
@@ -626,7 +642,6 @@ type AppendEntriesArgs struct {
 type AppendEntriesReply struct {
 	Term 				int
 	Success				bool
-
 	// fast backup
 	XTerm				int
 	XIndex				int
@@ -668,6 +683,11 @@ func (rf *Raft) sendAppendEntries(server int) {
 		return
 	}
 
+	if reply.Term < rf.curTerm {
+		DPrintf("[Raft %v]: outdated ae", rf.me)
+		return
+	}
+
 	rf.handleAeReply(server, args, reply)
 }
 
@@ -693,9 +713,15 @@ func (rf *Raft) handleAeReply(server int, args *AppendEntriesArgs, reply *Append
 	}
 }
 
+// fastBackup called by handleAeReply()
+// upon Log Matching failed, updating nextIndex according to reply
 func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
 	// fast backup
-	if reply.XTerm == -1 {
+	DPrintf("[Raft %v]: fastBackup, nextIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
+		rf.me, rf.logState.nextIndex, reply.XTerm, reply.XIndex, reply.XLen)
+	if reply.XTerm == 0 && reply.XIndex == 0 && reply.XLen == 0 {
+		return
+	}else if reply.XTerm == -1 {
 		// if follower doesn't have a log in nextIndex, nextIndex = XLen
 		rf.logState.nextIndex[server] = reply.XLen
 	}else {
@@ -712,8 +738,8 @@ func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
 			}
 		}
 	}
-	DPrintf("[Raft %v]: Leader, Log Matching error, new nextIndex = %v\n",
-		rf.me, rf.logState.nextIndex)
+	DPrintf("[Raft %v]: Leader, Log Matching error in Raft %v, new nextIndex = %v\n",
+		rf.me, server, rf.logState.nextIndex)
 }
 
 // AppendEntries RPC handler
@@ -756,6 +782,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // logMatching, called by AppendEntries() RPC handler
 // check for preLog matching, setup XTerm, XIndex, XLen in reply
 func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	DPrintf("[Raft %v]: curLogs = %v, preLogIndex = %v, preLogTerm = %v",
+		rf.me, rf.logState.logs, args.PreLogIndex, args.PreLogTerm)
 	ok := true
 	if len(rf.logState.logs) <= args.PreLogIndex ||
 		rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
@@ -795,10 +823,14 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 			DPrintf("[Raft %v]: delete conflict logs, new logs = %v",
 				rf.me, rf.logState.logs)
 		}
-		rf.logState.logs = append(rf.logState.logs, entry)
-		DPrintf("[Raft %v]: all logs appended, new logs = %v",
-			rf.me, rf.logState.logs)
+		// only append new entries ????
+		if args.PreLogIndex + i + 1 > len(rf.logState.logs) - 1 || rf.logState.logs[args.PreLogIndex + i + 1] != entry{
+			rf.logState.logs = append(rf.logState.logs, entry)
+
+		}
 	}
+	DPrintf("[Raft %v]: all logs appended, new logs = %v",
+		rf.me, rf.logState.logs)
 	rf.persist()
 }
 
@@ -924,7 +956,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	e.votedFor = -1
 	e.votes = 0
 	e.respond = 0
-	e.votesSendWg = &sync.WaitGroup{}
+	//e.votesSendWg = &sync.WaitGroup{}
 
 	// initialize logState fields (2B)
 	rf.logState.logs = make([]logEntry, 0)
@@ -951,5 +983,5 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 // getRandomTimeout generate random timeout between [500 ~ 1000) ms
 func getRandomTimeout() int {
-	return rand.Intn(500) + 500
+	return rand.Intn(700) + 700
 }

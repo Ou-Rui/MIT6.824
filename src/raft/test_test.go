@@ -747,8 +747,8 @@ func TestUnreliableAgree2C(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	for iters := 1; iters < 2; iters++ {				// 50
-		for j := 0; j < 1; j++ {						// 4
+	for iters := 1; iters < 50; iters++ {				// 50
+		for j := 0; j < 4; j++ {						// 4
 			wg.Add(1)
 			go func(iters, j int) {
 				defer wg.Done()
@@ -774,16 +774,16 @@ func TestFigure8Unreliable2C(t *testing.T) {
 
 	cfg.begin("Test (2C): Figure 8 (unreliable)")
 
-	cfg.one(rand.Int()%10000, 1, true)
+	cfg.one(rand.Int() % 100, 1, true)			// % 10000
 
 	nup := servers
-	for iters := 0; iters < 1000; iters++ {
-		if iters == 200 {
+	for iters := 0; iters < 1000; iters++ {							// 1000
+		if iters == 200 {												// 200
 			cfg.setlongreordering(true)
 		}
 		leader := -1
 		for i := 0; i < servers; i++ {
-			_, _, ok := cfg.rafts[i].Start(rand.Int() % 10000)
+			_, _, ok := cfg.rafts[i].Start(rand.Int() % 100)		// % 10000
 			if ok && cfg.connected[i] {
 				leader = i
 			}
@@ -817,7 +817,7 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		}
 	}
 
-	cfg.one(rand.Int()%10000, servers, true)
+	cfg.one(rand.Int()%100, servers, true)		// 10000
 
 	cfg.end()
 }
