@@ -207,6 +207,7 @@ func (rf *Raft) timeoutLoop() {
 // Goroutine, start by newElection()
 func (rf *Raft) waitForVoteLoop(term int) {
 	//rf.election.votesSendWg.Wait()
+	time.Sleep(10 * time.Millisecond)
 	for  {
 		rf.mu.Lock()
 		if rf.killed() || rf.state != candidate {
@@ -272,7 +273,7 @@ func (rf *Raft) appendEntriesLoop() {
 			}
 		}
 		rf.mu.Unlock()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 
@@ -563,7 +564,8 @@ func (rf *Raft) sendRequestVote(server int) {
 	if reply.Term > rf.curTerm {
 		rf.toFollower(reply.Term)
 	}else if reply.Term < rf.curTerm {
-
+		DPrintf("[Raft %v]: RequestVote reply out-of-date.. discard..",
+			rf.me)
 	}else if reply.Term == rf.curTerm {
 		if reply.VoteGranted {
 			DPrintf("Get One Vote!!")
