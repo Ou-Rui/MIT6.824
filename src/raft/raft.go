@@ -367,6 +367,8 @@ func (rf *Raft) newElection(term int) {
 	//	return
 	//}
 	// broadcast RequestVote
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			//rf.election.votesSendWg.Add(1)
@@ -917,9 +919,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 //
 func (rf *Raft) Kill() {
+
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
-	DPrintf("[Raft %v]: be killed... logs = %v", rf.me, rf.logState.logs)
+	//DPrintf("[Raft %v]: be killed... logs = %v", rf.me, rf.logState.logs)
 	//time.Sleep(1*time.Second)
 }
 
