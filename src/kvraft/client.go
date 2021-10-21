@@ -1,6 +1,9 @@
 package kvraft
 
-import "mymr/src/labrpc"
+import (
+	"fmt"
+	"mymr/src/labrpc"
+)
 import "crypto/rand"
 import "math/big"
 
@@ -24,7 +27,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	return ck
 }
 
-// Get
+// GetRequest
 // fetch the current value for a key.
 // returns "" if the key does not exist.
 // keeps trying forever in the face of all other errors.
@@ -36,13 +39,29 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 //
-func (ck *Clerk) Get(key string) string {
-
+func (ck *Clerk) GetRequest(key string) string {
 	// You will have to modify this function.
-	return ""
+	for  {
+		server := nrand() % int64(len(ck.servers))
+		args := GetArgs{
+			Key: key,
+			Id: fmt.Sprintf("%v+%v+%v","Get", server, nrand()),
+		}
+		reply := GetReply{
+			Err:   "",
+			Value: "",
+		}
+		ok := ck.servers[server].Call("KVServer.Get", &args, &reply)
+		if !ok {
+
+		}
+		if ok && reply.Err == OK {
+			return reply.Value
+		}
+	}
 }
 
-//
+// PutAppendRequest
 // shared by Put and Append.
 //
 // you can send an RPC with code like this:
@@ -52,13 +71,32 @@ func (ck *Clerk) Get(key string) string {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 //
-func (ck *Clerk) PutAppend(key string, value string, op string) {
+func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 	// You will have to modify this function.
+	for  {
+		server := nrand() % int64(len(ck.servers))			// pick random server
+		args := PutAppendArgs{
+			Key:   		key,
+			Value: 		value,
+			Op:    		op,
+			Id: 		fmt.Sprintf("%v+%v+%v", op, server, nrand()),
+		}
+		reply := PutAppendReply{
+			Err: "",
+		}
+		ok := ck.servers[server].Call("KVServer.PutAppend", &args, &reply)
+		if !ok {
+
+		}
+		if ok && reply.Err == OK {
+			return
+		}
+	}
 }
 
-func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, "Put")
+func (ck *Clerk) PutRequest(key string, value string) {
+	ck.PutAppendRequest(key, value, "Put")
 }
-func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, "Append")
+func (ck *Clerk) AppendRequest(key string, value string) {
+	ck.PutAppendRequest(key, value, "Append")
 }

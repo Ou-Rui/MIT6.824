@@ -21,18 +21,18 @@ const linearizabilityCheckTimeout = 1 * time.Second
 
 // get/put/putappend that keep counts
 func Get(cfg *config, ck *Clerk, key string) string {
-	v := ck.Get(key)
+	v := ck.GetRequest(key)
 	cfg.op()
 	return v
 }
 
 func Put(cfg *config, ck *Clerk, key string, value string) {
-	ck.Put(key, value)
+	ck.PutRequest(key, value)
 	cfg.op()
 }
 
 func Append(cfg *config, ck *Clerk, key string, value string) {
-	ck.Append(key, value)
+	ck.AppendRequest(key, value)
 	cfg.op()
 }
 
