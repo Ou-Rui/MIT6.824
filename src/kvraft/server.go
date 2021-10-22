@@ -85,7 +85,7 @@ func (kv *KVServer) applyLoop() {
 
 		if applyMsg.CommandIndex >= kv.commitIndex {
 			kv.commitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
-			if kv.resultMap[id].status == Undone || kv.resultMap[id].status == "" {
+			if kv.resultMap[id].status == "" {
 				result := kv.applyOne(op)          // apply
 				kv.resultMap[id] = result
 			}
@@ -162,12 +162,12 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	kv.resultMap[op.Id] = Result{
-		opType: "",
-		value:  "",
-		err:    "",
-		status: Undone,
-	}
+	//kv.resultMap[op.Id] = Result{
+	//	opType: "",
+	//	value:  "",
+	//	err:    "",
+	//	status: "",
+	//}
 
 	for kv.resultMap[op.Id].status != Done {
 		//DPrintf("[KV %v]: Get wait here id = %v",
@@ -181,11 +181,11 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		//DPrintf("[KV %v]: Get wakeup! id = %v, isLeader = %v",
 			//kv.me, op.Id, isLeader)
 		if !isLeader {
-			kv.resultMap[op.Id] = Result{}
+			//kv.resultMap[op.Id] = Result{}
 			reply.Err = ErrWrongLeader
 			return
 		}else if term != curTerm{
-			kv.resultMap[op.Id] = Result{}
+			//kv.resultMap[op.Id] = Result{}
 			reply.Err = ErrNewTerm
 			return
 		}
@@ -225,12 +225,12 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	kv.resultMap[op.Id] = Result{
-		opType: "",
-		value:  "",
-		err:    "",
-		status: Undone,
-	}
+	//kv.resultMap[op.Id] = Result{
+	//	opType: "",
+	//	value:  "",
+	//	err:    "",
+	//	status: "",
+	//}
 
 	for kv.resultMap[op.Id].status != Done {
 		//DPrintf("[KV %v]: PutAppend wait here id = %v",
@@ -242,11 +242,11 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		//DPrintf("[KV %v]: PutAppend wakeup! id = %v, isLeader = %v",
 		//	kv.me, op.Id, isLeader)
 		if !isLeader {
-			kv.resultMap[op.Id] = Result{}
+			//kv.resultMap[op.Id] = Result{}
 			reply.Err = ErrWrongLeader
 			return
 		}else if term != curTerm {
-			kv.resultMap[op.Id] = Result{}
+			//kv.resultMap[op.Id] = Result{}
 			reply.Err = ErrNewTerm
 			return
 		}
