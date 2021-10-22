@@ -898,10 +898,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			rf.me, command, rf.logState.logBuffer)
 		rf.logState.muLb.Unlock()
 		go rf.leaderAppendEntry()
-
 	}else {
-		//DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
-		//	rf.me, command)
+		isLeader = false
+		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
+			rf.me, command)
 	}
 
 	return index, term, isLeader
