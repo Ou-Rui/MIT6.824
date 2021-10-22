@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 )
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -87,9 +87,10 @@ func (kv *KVServer) applyLoop() {
 			if kv.resultMap[id].status == Undone {
 				result := kv.applyOne(op)          // apply
 				kv.resultMap[id] = result
-				kv.resultCond.Broadcast()
 			}
-		} else {
+			kv.resultCond.Broadcast()
+			DPrintf("[KV %v]: wakeup!!", kv.me)
+		}else {
 			DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
 				kv.me, kv.commitIndex, applyMsg.CommandIndex)
 		}
@@ -154,7 +155,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	kv.mu.Unlock()
 	_, _, isLeader := kv.rf.Start(op)
 	kv.mu.Lock()
-	DPrintf("[KV %v]: Get request start", kv.me)
+	//DPrintf("[KV %v]: Get request start", kv.me)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
@@ -168,7 +169,19 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.resultMap[op.Id].status != Done {
+		//DPrintf("[KV %v]: Get wait here id = %v",
+		//	kv.me, op.Id)
 		kv.resultCond.Wait()
+		kv.mu.Unlock()
+		_, isLeader := kv.rf.GetState()
+		kv.mu.Lock()
+		DPrintf("[KV %v]: Get wakeup! id = %v, isLeader = %v",
+			kv.me, op.Id, isLeader)
+		if !isLeader {
+			kv.resultMap[op.Id] = Result{}
+			reply.Err = ErrWrongLeader
+			return
+		}
 	}
 	result := kv.resultMap[op.Id]
 	reply.Err = result.err
@@ -199,7 +212,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Unlock()
 	_, _, isLeader := kv.rf.Start(op)
 	kv.mu.Lock()
-	DPrintf("[KV %v]: PutAppend request start", kv.me)
+	//DPrintf("[KV %v]: PutAppend request start", kv.me)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
@@ -212,7 +225,19 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.resultMap[op.Id].status != Done {
+		DPrintf("[KV %v]: PutAppend wait here id = %v",
+			kv.me, op.Id)
 		kv.resultCond.Wait()
+		kv.mu.Unlock()
+		_, isLeader := kv.rf.GetState()
+		kv.mu.Lock()
+		DPrintf("[KV %v]: PutAppend wakeup! id = %v, isLeader = %v",
+			kv.me, op.Id, isLeader)
+		if !isLeader {
+			kv.resultMap[op.Id] = Result{}
+			reply.Err = ErrWrongLeader
+			return
+		}
 	}
 	result := kv.resultMap[op.Id]
 	reply.Err = result.err

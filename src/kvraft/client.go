@@ -115,23 +115,23 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			Err: "",
 		}
 		ok := ck.servers[server].Call("KVServer.PutAppend", &args, &reply)
-		if !ok || reply.Err == ErrWrongLeader{
+		if !ok || reply.Err == ErrWrongLeader {
 			// network failed  OR  wrong leader
 			if !ok {
-				DPrintf("[CK]: PutAppend network failed.. retrying.. type = %v", op)
+				DPrintf("[CK]: PutAppend network failed.. retrying.. id = %v", id)
 			}else {
-				DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. type = %v", op)
+				DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. id = %v", id)
 			}
 			ck.LeaderId = -1
 		}else if ok && reply.Err == OK {
 			ck.LeaderId = server
-			DPrintf("[CK]: PutAppend succeed, leaderId = %v, type = %v, key = %v,",
-				ck.LeaderId, op, args.Key)
+			DPrintf("[CK]: PutAppend succeed, leaderId = %v, id = %v, key = %v,",
+				ck.LeaderId, id, args.Key)
 			return
 		}else if ok && reply.Err == ErrAlreadyDone {		// if first RPC replyMsg lost in network, it'll get to ErrAlreadyDone
 			ck.LeaderId = server
-			DPrintf("[CK]: PutAppend AlreadyDone, leaderId = %v, type = %v, key = %v,",
-				ck.LeaderId, op, args.Key)
+			DPrintf("[CK]: PutAppend AlreadyDone, leaderId = %v, id = %v, key = %v,",
+				ck.LeaderId, id, args.Key)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
