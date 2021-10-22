@@ -43,9 +43,9 @@ import "mymr/src/labrpc"
 // ApplyMsg, but set CommandValid to false for these other uses.
 //
 type ApplyMsg struct {
-	CommandValid bool
-	Command      interface{}
-	CommandIndex int
+	CommandValid 		bool
+	Command      		interface{}
+	CommandIndex 		int
 }
 
 type raftState int

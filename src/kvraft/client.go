@@ -3,14 +3,17 @@ package kvraft
 import (
 	"fmt"
 	"mymr/src/labrpc"
+	"time"
 )
 import "crypto/rand"
 import "math/big"
 
 
 type Clerk struct {
-	servers []*labrpc.ClientEnd
+	servers 			[]*labrpc.ClientEnd
 	// You will have to modify this struct.
+
+	LeaderId			int			// remember last leader
 }
 
 func nrand() int64 {
@@ -42,7 +45,11 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) GetRequest(key string) string {
 	// You will have to modify this function.
 	for  {
-		server := nrand() % int64(len(ck.servers))
+		server := ck.LeaderId
+		if server == -1 {
+			server = int(nrand() % int64(len(ck.servers)))
+		}
+
 		args := GetArgs{
 			Key: key,
 			Id: fmt.Sprintf("%v+%v+%v","Get", server, nrand()),
@@ -52,12 +59,24 @@ func (ck *Clerk) GetRequest(key string) string {
 			Value: "",
 		}
 		ok := ck.servers[server].Call("KVServer.Get", &args, &reply)
-		if !ok {
-
-		}
-		if ok && reply.Err == OK {
+		if !ok || reply.Err == ErrWrongLeader{
+			// network failed  OR  wrong leader
+			if !ok {
+				DPrintf("[CK]: Get network failed.. retrying")
+			}else {
+				DPrintf("[CK]: Get failed..wrong leader, retrying")
+			}
+			ck.LeaderId = -1
+		}else if ok && reply.Err == ErrNoKey {
+			DPrintf("[CK]: Get failed.. No key! return null")
+			return ""
+		}else if ok && reply.Err == OK {
+			DPrintf("[CK]: Get succeed, leaderId = %v, Key = %v, Value = %v",
+				ck.LeaderId, args.Key, reply.Value)
+			ck.LeaderId = server
 			return reply.Value
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -74,7 +93,11 @@ func (ck *Clerk) GetRequest(key string) string {
 func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 	// You will have to modify this function.
 	for  {
-		server := nrand() % int64(len(ck.servers))			// pick random server
+		server := ck.LeaderId
+		if server == -1 {
+			server = int(nrand() % int64(len(ck.servers)))
+		}
+
 		args := PutAppendArgs{
 			Key:   		key,
 			Value: 		value,
@@ -85,12 +108,22 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			Err: "",
 		}
 		ok := ck.servers[server].Call("KVServer.PutAppend", &args, &reply)
-		if !ok {
-
+		if !ok || reply.Err == ErrWrongLeader{
+			// network failed  OR  wrong leader
+			if !ok {
+				DPrintf("[CK]: PutAppend network failed.. retrying.. type = %v", op)
+			}else {
+				DPrintf("[CK]: PutAppend failed..wrong leader, retrying.. type = %v", op)
+			}
+			ck.LeaderId = -1
 		}
 		if ok && reply.Err == OK {
+			ck.LeaderId = server
+			DPrintf("[CK]: PutAppend succeed, leaderId = %v, Type = %v Key = %v,",
+				ck.LeaderId, op, args.Key)
 			return
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
