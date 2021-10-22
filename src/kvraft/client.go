@@ -3,7 +3,6 @@ package kvraft
 import (
 	"fmt"
 	"mymr/src/labrpc"
-	"time"
 )
 import "crypto/rand"
 import "math/big"
@@ -44,6 +43,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 //
 func (ck *Clerk) GetRequest(key string) string {
 	// You will have to modify this function.
+	id := fmt.Sprintf("%v+%v","Get", nrand())
 	for  {
 		server := ck.LeaderId
 		if server == -1 {
@@ -52,7 +52,7 @@ func (ck *Clerk) GetRequest(key string) string {
 
 		args := GetArgs{
 			Key: key,
-			Id: fmt.Sprintf("%v+%v+%v","Get", server, nrand()),
+			Id: id,
 		}
 		reply := GetReply{
 			Err:   "",
@@ -62,21 +62,21 @@ func (ck *Clerk) GetRequest(key string) string {
 		if !ok || reply.Err == ErrWrongLeader{
 			// network failed  OR  wrong leader
 			if !ok {
-				DPrintf("[CK]: Get network failed.. retrying")
+				//DPrintf("[CK]: Get network failed.. retrying")
 			}else {
-				DPrintf("[CK]: Get failed..wrong leader, retrying")
+				//DPrintf("[CK]: Get failed..wrong leader, retrying")
 			}
 			ck.LeaderId = -1
 		}else if ok && reply.Err == ErrNoKey {
 			DPrintf("[CK]: Get failed.. No key! return null")
 			return ""
 		}else if ok && reply.Err == OK {
-			DPrintf("[CK]: Get succeed, leaderId = %v, Key = %v, Value = %v",
+			DPrintf("[CK]: Get succeed, leaderId = %v, key = %v, value = %v",
 				ck.LeaderId, args.Key, reply.Value)
 			ck.LeaderId = server
 			return reply.Value
 		}
-		time.Sleep(10 * time.Millisecond)
+		//time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -92,6 +92,7 @@ func (ck *Clerk) GetRequest(key string) string {
 //
 func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 	// You will have to modify this function.
+	id := fmt.Sprintf("%v+%v", op, nrand())
 	for  {
 		server := ck.LeaderId
 		if server == -1 {
@@ -102,7 +103,7 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			Key:   		key,
 			Value: 		value,
 			Op:    		op,
-			Id: 		fmt.Sprintf("%v+%v+%v", op, server, nrand()),
+			Id: 		id,
 		}
 		reply := PutAppendReply{
 			Err: "",
@@ -111,19 +112,19 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 		if !ok || reply.Err == ErrWrongLeader{
 			// network failed  OR  wrong leader
 			if !ok {
-				DPrintf("[CK]: PutAppend network failed.. retrying.. type = %v", op)
+				//DPrintf("[CK]: PutAppend network failed.. retrying.. type = %v", op)
 			}else {
-				DPrintf("[CK]: PutAppend failed..wrong leader, retrying.. type = %v", op)
+				//DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. type = %v", op)
 			}
 			ck.LeaderId = -1
 		}
 		if ok && reply.Err == OK {
 			ck.LeaderId = server
-			DPrintf("[CK]: PutAppend succeed, leaderId = %v, Type = %v Key = %v,",
+			DPrintf("[CK]: PutAppend succeed, leaderId = %v, type = %v, key = %v,",
 				ck.LeaderId, op, args.Key)
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		//time.Sleep(10 * time.Millisecond)
 	}
 }
 

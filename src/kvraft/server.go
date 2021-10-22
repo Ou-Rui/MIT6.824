@@ -76,24 +76,29 @@ func (kv *KVServer) applyLoop() {
 		applyMsg := <-kv.applyCh // keep watching applyCh
 
 		kv.mu.Lock()
+
 		if applyMsg.CommandIndex >= kv.commitIndex {
 			op, _ := applyMsg.Command.(Op)
-			id, result := kv.applyOne(op)          // apply
+			id := op.Id
+
+			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+				kv.me, kv.commitIndex, applyMsg.CommandIndex, id, kv.resultMap[id].status)
 			kv.commitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 			if kv.resultMap[id].status == Undone {
+				result := kv.applyOne(op)          // apply
 				kv.resultMap[id] = result
 				kv.resultCond.Broadcast()
 			}
 		} else {
-			DPrintf("[KV %v]: Applied Command.. commitIndex = %v, applyIndex = %v",
+			DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
 				kv.me, kv.commitIndex, applyMsg.CommandIndex)
 		}
 		kv.mu.Unlock()
 	}
 }
 
-func (kv *KVServer) applyOne(op Op) (id string, result Result) {
-	id = op.Id // key of resultMap
+func (kv *KVServer) applyOne(op Op) (result Result) {
+	//id := op.Id // key of resultMap
 	result = Result{
 		opType: "op.OpType",
 		value:  "",
@@ -121,6 +126,8 @@ func (kv *KVServer) applyOne(op Op) (id string, result Result) {
 		}
 		result.err = OK
 	}
+	DPrintf("[KV %v]: applyOne, id = %v, key = %v, value = %v",
+		kv.me, op.Id, op.Key, op.Value)
 	return
 }
 
@@ -146,14 +153,16 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		err:    "",
 		status: Undone,
 	}
-	for kv.resultMap[op.Id].status != "Done" {
+	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
+		kv.me, op.Id, args.Key)
+	for kv.resultMap[op.Id].status != Done {
 		kv.resultCond.Wait()
 	}
-	DPrintf("[KV %v]: Get request id = %v, reply = %v",
-		kv.me, op.Id, reply)
 	result := kv.resultMap[op.Id]
 	reply.Err = result.err
 	reply.Value = result.value
+	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
+		kv.me, op.Id, args.Key, reply, kv.resultMap[op.Id].status)
 
 }
 
@@ -179,13 +188,15 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		err:    "",
 		status: Undone,
 	}
-	for kv.resultMap[op.Id].status != "Done" {
+	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
+		kv.me, op.Id, args.Op, args.Key, args.Value)
+	for kv.resultMap[op.Id].status != Done {
 		kv.resultCond.Wait()
 	}
-	DPrintf("[KV %v]: PutAppend request id = %v, reply = %v",
-		kv.me, op.Id, reply)
 	result := kv.resultMap[op.Id]
 	reply.Err = result.err
+	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
+		kv.me, op.Id, reply, kv.resultMap[op.Id].status)
 }
 
 // Kill
