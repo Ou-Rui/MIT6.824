@@ -75,6 +75,11 @@ func (ck *Clerk) GetRequest(key string) string {
 				ck.LeaderId, args.Key, reply.Value)
 			ck.LeaderId = server
 			return reply.Value
+		}else if ok && reply.Err == ErrAlreadyDone {
+			DPrintf("[CK]: Get AlreadyDone, leaderId = %v, key = %v, value = %v",
+				ck.LeaderId, args.Key, reply.Value)
+			ck.LeaderId = server
+			return reply.Value
 		}
 		//time.Sleep(10 * time.Millisecond)
 	}
@@ -122,9 +127,10 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			DPrintf("[CK]: PutAppend succeed, leaderId = %v, type = %v, key = %v,",
 				ck.LeaderId, op, args.Key)
 			return
-		}else if ok && reply.Err == ErrAlreadyDone {
+		}else if ok && reply.Err == ErrAlreadyDone {		// if first RPC replyMsg lost in network, it'll get to ErrAlreadyDone
 			ck.LeaderId = server
-			DPrintf("[CK]: PutAppend AlreadyDone")
+			DPrintf("[CK]: PutAppend AlreadyDone, leaderId = %v, type = %v, key = %v,",
+				ck.LeaderId, op, args.Key)
 			return
 		}
 		//time.Sleep(10 * time.Millisecond)

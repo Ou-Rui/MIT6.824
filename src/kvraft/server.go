@@ -133,6 +133,17 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
+		kv.me, args.Id, args.Key)
+	if kv.resultMap[args.Id].status != "" {
+		DPrintf("[KV %v]: started..", kv.me)
+		reply.Value = kv.resultMap[args.Id].value
+		reply.Err = ErrAlreadyDone
+		return
+	}
+
 	op := Op{
 		OpType: 		GetType,
 		Key:   			args.Key,
@@ -144,8 +155,6 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 
 	kv.resultMap[op.Id] = Result{
 		opType: "",
@@ -153,8 +162,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		err:    "",
 		status: Undone,
 	}
-	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
-		kv.me, op.Id, args.Key)
+
 	for kv.resultMap[op.Id].status != Done {
 		kv.resultCond.Wait()
 	}
@@ -168,6 +176,16 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
+		kv.me, args.Id, args.Op, args.Key, args.Value)
+
+	if kv.resultMap[args.Id].status != "" {
+		DPrintf("[KV %v]: started..", kv.me)
+		reply.Err = ErrAlreadyDone
+		return
+	}
 	op := Op{
 		OpType: 		OpType(args.Op),
 		Key:    		args.Key,
@@ -177,15 +195,6 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	_, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
-		return
-	}
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
-		kv.me, op.Id, args.Op, args.Key, args.Value)
-	if kv.resultMap[op.Id].status != "" {
-		DPrintf("[KV %v]: started..", kv.me)
-		reply.Err = ErrAlreadyDone
 		return
 	}
 	kv.resultMap[op.Id] = Result{
