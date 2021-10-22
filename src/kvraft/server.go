@@ -74,15 +74,15 @@ func (kv *KVServer) applyLoop() {
 			return
 		}
 		applyMsg := <-kv.applyCh // keep watching applyCh
-
+		DPrintf("[KV %v]: applyMsg = %v",
+			kv.me, applyMsg)
 		kv.mu.Lock()
+		op, _ := applyMsg.Command.(Op)
+		id := op.Id
+		DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+			kv.me, kv.commitIndex, applyMsg.CommandIndex, id, kv.resultMap[id].status)
 
 		if applyMsg.CommandIndex >= kv.commitIndex {
-			op, _ := applyMsg.Command.(Op)
-			id := op.Id
-
-			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-				kv.me, kv.commitIndex, applyMsg.CommandIndex, id, kv.resultMap[id].status)
 			kv.commitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 			if kv.resultMap[id].status == Undone {
 				result := kv.applyOne(op)          // apply
@@ -135,6 +135,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+
 	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
 		kv.me, args.Id, args.Key)
 	if kv.resultMap[args.Id].status != "" {
@@ -150,7 +151,10 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		Value:  		"",
 		Id:     		args.Id,
 	}
+	kv.mu.Unlock()
 	_, _, isLeader := kv.rf.Start(op)
+	kv.mu.Lock()
+	DPrintf("[KV %v]: Get request start", kv.me)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
@@ -192,7 +196,10 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		Value:  		args.Value,
 		Id:     		args.Id,
 	}
+	kv.mu.Unlock()
 	_, _, isLeader := kv.rf.Start(op)
+	kv.mu.Lock()
+	DPrintf("[KV %v]: PutAppend request start", kv.me)
 	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
@@ -227,6 +234,9 @@ func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	// Your code here, if desired.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	DPrintf("[KV %v]: killed..", kv.me)
 }
 
 func (kv *KVServer) killed() bool {
