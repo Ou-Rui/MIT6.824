@@ -181,15 +181,20 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
+	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
+		kv.me, op.Id, args.Op, args.Key, args.Value)
+	if kv.resultMap[op.Id].status != "" {
+		DPrintf("[KV %v]: started..", kv.me)
+		reply.Err = ErrAlreadyDone
+		return
+	}
 	kv.resultMap[op.Id] = Result{
 		opType: "",
 		value:  "",
 		err:    "",
 		status: Undone,
 	}
-	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
-		kv.me, op.Id, args.Op, args.Key, args.Value)
+
 	for kv.resultMap[op.Id].status != Done {
 		kv.resultCond.Wait()
 	}

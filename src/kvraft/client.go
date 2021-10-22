@@ -117,11 +117,14 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 				//DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. type = %v", op)
 			}
 			ck.LeaderId = -1
-		}
-		if ok && reply.Err == OK {
+		}else if ok && reply.Err == OK {
 			ck.LeaderId = server
 			DPrintf("[CK]: PutAppend succeed, leaderId = %v, type = %v, key = %v,",
 				ck.LeaderId, op, args.Key)
+			return
+		}else if ok && reply.Err == ErrAlreadyDone {
+			ck.LeaderId = server
+			DPrintf("[CK]: PutAppend AlreadyDone")
 			return
 		}
 		//time.Sleep(10 * time.Millisecond)
