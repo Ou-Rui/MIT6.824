@@ -1,10 +1,11 @@
 package kvraft
 
 const (
-	OK             = "OK"
-	ErrNoKey       = "ErrNoKey"
-	ErrWrongLeader = "ErrWrongLeader"
-	ErrAlreadyDone = "ErrAlreadyDone"
+	OK             	= 	"OK"
+	ErrNoKey       	= 	"ErrNoKey"
+	ErrWrongLeader 	= 	"ErrWrongLeader"
+	ErrAlreadyDone  = 	"ErrAlreadyDone"
+	ErrNewTerm		=	"ErrNewTerm"
 )
 
 type Err string

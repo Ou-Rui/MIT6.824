@@ -81,6 +81,10 @@ func (ck *Clerk) GetRequest(key string) string {
 				ck.LeaderId, args.Key, reply.Value)
 			ck.LeaderId = server
 			return reply.Value
+		}else if ok && reply.Err == ErrNewTerm {			// term has changed, the log may not be committed infinitely, retry!
+			ck.LeaderId = server
+			DPrintf("[CK]: Get NewTerm, leaderId = %v, id = %v, key = %v,",
+				ck.LeaderId, id, args.Key)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -125,14 +129,18 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			ck.LeaderId = -1
 		}else if ok && reply.Err == OK {
 			ck.LeaderId = server
-			DPrintf("[CK]: PutAppend succeed, leaderId = %v, id = %v, key = %v,",
-				ck.LeaderId, id, args.Key)
+			DPrintf("[CK]: PutAppend succeed, leaderId = %v, id = %v, key = %v, value = %v",
+				ck.LeaderId, id, args.Key, args.Value)
 			return
 		}else if ok && reply.Err == ErrAlreadyDone {		// if first RPC replyMsg lost in network, it'll get to ErrAlreadyDone
 			ck.LeaderId = server
 			DPrintf("[CK]: PutAppend AlreadyDone, leaderId = %v, id = %v, key = %v,",
 				ck.LeaderId, id, args.Key)
 			return
+		}else if ok && reply.Err == ErrNewTerm {			// term has changed, the log may not be committed infinitely, retry!
+			ck.LeaderId = server
+			DPrintf("[CK]: PutAppend NewTerm, leaderId = %v, id = %v, key = %v,",
+				ck.LeaderId, id, args.Key)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
