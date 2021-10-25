@@ -273,7 +273,7 @@ func (rf *Raft) appendEntriesLoop() {
 			}
 		}
 		rf.mu.Unlock()
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -985,12 +985,12 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	term, isLeader = rf.GetState()
 	if isLeader && !rf.killed() {
+		rf.logState.muLb.Lock()
 		log := logEntry{
 			Command: command,
 			Term:    term,
 			Index:   (rf.logState.lastLogIndex + 1) + (len(rf.logState.logBuffer)),
 		}
-		rf.logState.muLb.Lock()
 		rf.logState.logBuffer = append(rf.logState.logBuffer, log)
 		//index = (rf.logState.lastLogIndex + 1) + (len(rf.logState.logBuffer) - 1)
 		index = log.Index
