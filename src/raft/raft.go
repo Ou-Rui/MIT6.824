@@ -366,18 +366,11 @@ func (rf *Raft) leaderAppendEntry()  {
 // newElection require rf.mu.Lock()
 // call by timeoutLoop() when timeout occur
 func (rf *Raft) newElection(term int) {
-	//if rf.killed() || rf.state != candidate || rf.curTerm != term {
-	//	DPrintf("[Raft %v]: stop sending RequestVotes, eleTerm = %v, curTerm = %v, state = %v",
-	//		rf.me, term, rf.curTerm, rf.state)
-	//	rf.mu.Unlock()
-	//	return
-	//}
 	// broadcast RequestVote
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			//rf.election.votesSendWg.Add(1)
 			go rf.sendRequestVote(i)
 		}
 	}
@@ -476,30 +469,6 @@ func (rf *Raft) readPersist(data []byte) {
 	DPrintf("[Raft %v]: read persistence, curTerm = %v, votedFor = %v, logs = %v",
 		rf.me, rf.curTerm, rf.election.votedFor, rf.logState.logs)
 	rf.persist()
-}
-
-// RequestVoteArgs
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-//
-type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
-	Term  			int			// candidate current term
-	CandidateId		int			// candidate who request for votes
-
-	// 2B leader restriction
-	LastLogIndex	int			// candidate's last log index
-	LastLogTerm		int			// candidate's term of last log
-}
-
-// RequestVoteReply
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-//
-type RequestVoteReply struct {
-	// Your data here (2A).
-	Term 			int
-	VoteGranted		bool
 }
 
 //
@@ -641,24 +610,6 @@ func (rf *Raft) leaderRestriction(args *RequestVoteArgs) bool {
 	return logFlag
 }
 
-type AppendEntriesArgs struct {
-	Term 				int
-	LeaderId			int
-	// log replication (2B)
-	PreLogIndex			int					// for checking Log Matching
-	PreLogTerm			int					// for checking Log Matching
-	Entries				[]logEntry			// logEntries for followers to append, according to nextIndex[]
-	LeaderCommit		int
-}
-
-type AppendEntriesReply struct {
-	Term 				int
-	Success				bool
-	// fast backup
-	XTerm				int
-	XIndex				int
-	XLen				int
-}
 
 func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
@@ -670,12 +621,6 @@ func (rf *Raft) sendAppendEntries(server int) {
 	preLogIndex := nextLogIndex - 1
 	preLogTerm := rf.logState.logs[preLogIndex].Term
 	nextSliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - nextLogIndex)
-	//for i, log := range rf.logState.logs {				// nextLogIndex --> nextSliceIndex
-	//	if log.Index == nextLogIndex {
-	//		nextSliceIndex = i
-	//		break
-	//	}
-	//}
 	entries := rf.logState.logs[nextSliceIndex : ]
 	args := &AppendEntriesArgs{
 		Term:         rf.curTerm,
@@ -804,40 +749,6 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 	DPrintf("[Raft %v]: curLogs = %v, preLogIndex = %v, preLogTerm = %v",
 		rf.me, rf.logState.logs, args.PreLogIndex, args.PreLogTerm)
 	ok := true
-	//for i := len(rf.logState.logs)-1; i > 0; i-- {
-	//	if rf.logState.logs[i].Index == args.PreLogIndex {
-	//		if rf.logState.logs[i].Term == args.PreLogTerm {
-	//			// logMatching succeed
-	//			break
-	//		}else {
-	//			// have conflicting log in diff term
-	//			reply.XTerm = rf.logState.logs[i].Term			// XTerm = diff term
-	//			// XIndex = index of first log in XTerm
-	//			j := i
-	//			for ; j >= 0; j-- {
-	//				if rf.logState.logs[j].Term != reply.XTerm {
-	//					break
-	//				}
-	//			}
-	//			reply.XIndex = rf.logState.logs[j+1].Index
-	//			ok = false
-	//			break
-	//		}
-	//	}else if rf.logState.logs[i].Index < args.PreLogIndex {
-	//		// don't even have the log
-	//		reply.XTerm = -1
-	//		reply.XIndex = -1
-	//		ok = false
-	//		break
-	//	}
-	//}
-	//if !ok {
-	//	reply.XLen = rf.logState.lastLogIndex + 1
-	//	reply.Success = false
-	//	DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
-	//		rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
-	//}
-
 	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - args.PreLogIndex)
 	if len(rf.logState.logs) <= sliceIndex || rf.logState.logs[sliceIndex].Term != args.PreLogTerm {
 		// preLog not match
@@ -864,30 +775,6 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
 	}
 
-	//
-	//if rf.logState.lastLogIndex + 1 <= args.PreLogIndex ||
-	//	rf.logState.logs[args.PreLogIndex].Term != args.PreLogTerm {
-	//	// preLog not match
-	//	reply.Success = false
-	//	// fast backup
-	//	if len(rf.logState.logs) <= args.PreLogIndex {
-	//		// don't even have the log
-	//		reply.XTerm = -1
-	//		reply.XIndex = -1
-	//	}else {
-	//		// have conflicting log in diff term
-	//		reply.XTerm = rf.logState.logs[args.PreLogIndex].Term
-	//		i := args.PreLogIndex
-	//		for ; i >= 0; i-- {
-	//			if rf.logState.logs[i].Term != reply.XTerm {
-	//				break
-	//			}
-	//		}
-	//		reply.XIndex = i+1
-	//	}
-	//	reply.XLen = rf.logState.lastLogIndex + 1
-	//}
-
 	return ok
 }
 
@@ -906,12 +793,6 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 				rf.me, rf.logState.logs)
 			rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
 		}
-		//if len(rf.logState.logs) - 1 >= args.PreLogIndex + i + 1 &&
-		//	rf.logState.logs[args.PreLogIndex + i + 1].Term != entry.Term {
-		//	rf.logState.logs = rf.logState.logs[ : args.PreLogIndex + i + 1]
-		//	DPrintf("[Raft %v]: delete conflict logs, new logs = %v",
-		//		rf.me, rf.logState.logs)
-		//}
 		// only append new entries ????
 		if sliceIndex < 0 || sliceIndex >= len(rf.logState.logs) || rf.logState.logs[sliceIndex] != entry{
 			rf.logState.logs = append(rf.logState.logs, entry)
@@ -946,20 +827,18 @@ func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 			}
 		}
 
-		//for i := rf.logState.commitIndex + 1; i <= tmpIndex; i++ {
-		//	applyMsg := ApplyMsg{
-		//		CommandValid: true,
-		//		Command:      rf.logState.logs[i].Command,
-		//		CommandIndex: i,
-		//	}
-		//	DPrintf("[Raft %v]: Follower apply: %v",
-		//		rf.me, applyMsg)
-		//	rf.applyCh <- applyMsg
-		//}
 		rf.logState.commitIndex = tmpIndex
 		DPrintf("[Raft %v]: Follower update commitIndex = %v, curTerm = %v",
 			rf.me, rf.logState.commitIndex, rf.curTerm)
 	}
+}
+
+func (rf *Raft) sendInstallSnapshot(server int) {
+
+}
+
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+
 }
 
 // Start
@@ -992,7 +871,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Index:   (rf.logState.lastLogIndex + 1) + (len(rf.logState.logBuffer)),
 		}
 		rf.logState.logBuffer = append(rf.logState.logBuffer, log)
-		//index = (rf.logState.lastLogIndex + 1) + (len(rf.logState.logBuffer) - 1)
 		index = log.Index
 		DPrintf("[Raft %v]: Receive Command, Im Leader! Appending Log.. command = %v, logBuffer = %v",
 			rf.me, command, rf.logState.logBuffer)
@@ -1019,7 +897,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 // should call killed() to check whether it should stop.
 //
 func (rf *Raft) Kill() {
-
 	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
 	//DPrintf("[Raft %v]: be killed... logs = %v", rf.me, rf.logState.logs)

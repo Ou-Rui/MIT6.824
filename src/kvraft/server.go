@@ -1,6 +1,7 @@
 package kvraft
 
 import (
+	"bytes"
 	"log"
 	"mymr/src/labgob"
 	"mymr/src/labrpc"
@@ -151,6 +152,22 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 	return
 }
 
+func (kv *KVServer) snapshotLoop() {
+
+}
+
+func (kv *KVServer) getSnapshot() []byte {
+	writer := new(bytes.Buffer)
+	encoder := labgob.NewEncoder(writer)
+
+	encoder.Encode(1)
+	//encoder.Encode(rf.election.votedFor)
+	//encoder.Encode(&rf.logState.logs)
+	data := writer.Bytes()
+	return data
+}
+
+
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	kv.mu.Lock()
@@ -179,8 +196,6 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-
-
 
 	for kv.resultMap[op.Id].status != Done {
 		kv.mu.Unlock()
@@ -313,6 +328,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	go kv.applyLoop()
 
+	if maxraftstate > 0 {
+		go kv.snapshotLoop()
+	}
 	return kv
 }
 
