@@ -108,7 +108,6 @@ func (kv *KVServer) applyLoop() {
 			id := op.Id
 			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
 				kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
-
 			if applyMsg.CommandIndex >= kv.CommitIndex {
 				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 				kv.CommitTerm = applyMsg.CommandTerm
@@ -120,6 +119,8 @@ func (kv *KVServer) applyLoop() {
 				DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
 					kv.me, kv.CommitIndex, applyMsg.CommandIndex)
 			}
+			_, requestIndex, clientId := parseRequestId(id)
+			go kv.removePrevious(requestIndex, clientId)
 		}else {
 			// snapshot apply
 			snapshot, _ := applyMsg.Command.([]byte)
@@ -252,8 +253,8 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
 		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].Status)
 
-	_, requestIndex, clientId := parseRequestId(args.Id)
-	go kv.removePrevious(requestIndex, clientId)
+	//_, requestIndex, clientId := parseRequestId(args.Id)
+	//go kv.removePrevious(requestIndex, clientId)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -300,8 +301,8 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
 		kv.me, op.Id, reply, kv.ResultMap[op.Id].Status)
 
-	_, requestIndex, clientId := parseRequestId(args.Id)
-	go kv.removePrevious(requestIndex, clientId)
+	//_, requestIndex, clientId := parseRequestId(args.Id)
+	//go kv.removePrevious(requestIndex, clientId)
 }
 
 // Kill
