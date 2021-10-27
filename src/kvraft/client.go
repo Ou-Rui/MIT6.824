@@ -30,7 +30,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
-	ck.clientId = nrand()
+	ck.clientId = nrand() % 1000000
 	ck.requestIndex = 0
 	return ck
 }
@@ -69,7 +69,7 @@ func (ck *Clerk) GetRequest(key string) string {
 			// network failed  OR  wrong leader
 			switch ok {
 			case true:
-				DPrintf("[CK]: Get failed..wrong leader, retrying")
+				//DPrintf("[CK]: Get failed..wrong leader, retrying")
 			case false:
 				DPrintf("[CK]: Get network failed.. retrying")
 			}
@@ -130,7 +130,7 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			// network failed  OR  wrong leader
 			switch ok {
 			case true:
-				DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. id = %v", id)
+				//DPrintf("[CK]: PutAppend failed.. wrong leader, retrying.. id = %v", id)
 			case false:
 				DPrintf("[CK]: PutAppend network failed.. retrying.. id = %v", id)
 			}
@@ -139,10 +139,10 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 			switch reply.Err {
 			case OK:
 				DPrintf("[CK]: PutAppend succeed, leaderId = %v, id = %v, key = %v, value = %v requestIndex = %v",
-					ck.leaderId, id, args.Key, args.Value, ck.requestIndex)
+					server, id, args.Key, args.Value, ck.requestIndex)
 			case ErrAlreadyDone:
 				DPrintf("[CK]: PutAppend AlreadyDone, leaderId = %v, id = %v, key = %v, requestIndex = %v",
-					ck.leaderId, id, args.Key, ck.requestIndex)
+					server, id, args.Key, ck.requestIndex)
 			}
 			ck.leaderId = server
 			ck.requestIndex++

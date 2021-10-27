@@ -45,10 +45,10 @@ type Op struct {
 }
 
 type Result struct {
-	opType 		OpType
-	value  		string
-	err    		Err
-	status 		string
+	OpType 		OpType
+	Value  		string
+	Err    		Err
+	Status 		string
 }
 
 const (
@@ -81,12 +81,12 @@ type KVServer struct {
 func (kv *KVServer) removePrevious(requestIndex int, clientId int) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	for id, result := range kv.ResultMap {
+	for id, _ := range kv.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
-			DPrintf("[KV %v]: removePrevious, id = %v, preResult = %v",
-				kv.me, id, result)
-			kv.ResultMap[id] = Result{}			// remove previous result
+			//DPrintf("[KV %v]: removePrevious, id = %v, preResult = %v",
+			//	kv.me, id, result)
+			delete(kv.ResultMap, id)			// remove previous result
 		}
 	}
 }
@@ -107,12 +107,12 @@ func (kv *KVServer) applyLoop() {
 			op, _ := applyMsg.Command.(Op)
 			id := op.Id
 			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-				kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].status)
+				kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
 
 			if applyMsg.CommandIndex >= kv.CommitIndex {
 				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 				kv.CommitTerm = applyMsg.CommandTerm
-				if kv.ResultMap[id].status == "" {
+				if kv.ResultMap[id].Status == "" {
 					result := kv.applyOne(op)          // apply
 					kv.ResultMap[id] = result
 				}
@@ -133,23 +133,23 @@ func (kv *KVServer) applyLoop() {
 // applyOne operation to key-value database
 func (kv *KVServer) applyOne(op Op) (result Result) {
 	result = Result{
-		opType: "op.OpType",
-		value:  "",
-		err:    "",
-		status: Done,
+		OpType: "op.OpType",
+		Value:  "",
+		Err:    "",
+		Status: Done,
 	}
 	if op.OpType == GetType {
 		value, ok := kv.Data[op.Key]
 		if ok {
-			result.value = value
-			result.err = OK
+			result.Value = value
+			result.Err = OK
 		} else {
-			result.value = ""
-			result.err = ErrNoKey
+			result.Value = ""
+			result.Err = ErrNoKey
 		}
 	} else if op.OpType == PutType {
 		kv.Data[op.Key] = op.Value
-		result.err = OK
+		result.Err = OK
 	} else if op.OpType == AppendType {
 		value, ok := kv.Data[op.Key]
 		if ok {
@@ -157,7 +157,7 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 		} else {
 			kv.Data[op.Key] = op.Value // put
 		}
-		result.err = OK
+		result.Err = OK
 	}
 	DPrintf("[KV %v]: applyOne, id = %v, key = %v, value = %v",
 		kv.me, op.Id, op.Key, op.Value)
@@ -172,14 +172,16 @@ func (kv *KVServer) snapshotLoop() {
 			return
 		}
 		if kv.persister.RaftStateSize() > kv.maxraftstate {
-			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!",
-				kv.me)
+			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!, size = %v",
+				kv.me, kv.persister.RaftStateSize())
 			snapshot := kv.generateSnapshot()
-			kv.rf.SaveSnapshot(snapshot)
+			kv.rf.SaveSnapshot(snapshot, kv.CommitIndex, kv.CommitTerm)
+			DPrintf("[KV %v]: Snapshot Done, size = %v",
+				kv.me, kv.persister.RaftStateSize())
 		}
 
 		kv.mu.Unlock()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
@@ -188,13 +190,15 @@ func (kv *KVServer) snapshotLoop() {
 func (kv *KVServer) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
-
+	DPrintf("len: data = %v, resultMap = %v", len(kv.Data), len(kv.ResultMap))
 	encoder.Encode(kv.Data)
+
 	encoder.Encode(kv.ResultMap)
 	encoder.Encode(kv.CommitIndex)
 	encoder.Encode(kv.CommitTerm)
 
 	data := writer.Bytes()
+	DPrintf("[KV %v]: snapshot = %v", kv.me, data)
 	return data
 }
 
@@ -206,9 +210,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
 		kv.me, args.Id, args.Key)
 
-	if kv.ResultMap[args.Id].status != "" {
+	if kv.ResultMap[args.Id].Status != "" {
 		DPrintf("[KV %v]: started..", kv.me)
-		reply.Value = kv.ResultMap[args.Id].value
+		reply.Value = kv.ResultMap[args.Id].Value
 		reply.Err = ErrAlreadyDone
 		return
 	}
@@ -228,7 +232,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	for kv.ResultMap[op.Id].status != Done {
+	for kv.ResultMap[op.Id].Status != Done {
 		kv.mu.Unlock()
 		time.Sleep(50 * time.Millisecond)
 		// check Leadership and Term
@@ -243,10 +247,10 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		}
 	}
 	result := kv.ResultMap[op.Id]
-	reply.Err = result.err
-	reply.Value = result.value
+	reply.Err = result.Err
+	reply.Value = result.Value
 	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
-		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].status)
+		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].Status)
 
 	_, requestIndex, clientId := parseRequestId(args.Id)
 	go kv.removePrevious(requestIndex, clientId)
@@ -258,7 +262,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
 		kv.me, args.Id, args.Op, args.Key, args.Value)
-	if kv.ResultMap[args.Id].status != "" {
+	if kv.ResultMap[args.Id].Status != "" {
 		DPrintf("[KV %v]: started..", kv.me)
 		reply.Err = ErrAlreadyDone
 		return
@@ -278,7 +282,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	for kv.ResultMap[op.Id].status != Done {
+	for kv.ResultMap[op.Id].Status != Done {
 		kv.mu.Unlock()
 		time.Sleep(50 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
@@ -292,9 +296,9 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 	}
 	result := kv.ResultMap[op.Id]
-	reply.Err = result.err
+	reply.Err = result.Err
 	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
-		kv.me, op.Id, reply, kv.ResultMap[op.Id].status)
+		kv.me, op.Id, reply, kv.ResultMap[op.Id].Status)
 
 	_, requestIndex, clientId := parseRequestId(args.Id)
 	go kv.removePrevious(requestIndex, clientId)

@@ -632,8 +632,9 @@ func TestSnapshotRPC3B(t *testing.T) {
 	// a bunch of puts into the majority partition.
 	cfg.partition([]int{0, 1}, []int{2})
 	{
+		DPrintf("[CFG]: partition, 0--1  2")
 		ck1 := cfg.makeClient([]int{0, 1})
-		for i := 0; i < 50; i++ {
+		for i := 0; i < 50; i++ {						// 50
 			Put(cfg, ck1, strconv.Itoa(i), strconv.Itoa(i))
 		}
 		time.Sleep(electionTimeout)
@@ -651,6 +652,7 @@ func TestSnapshotRPC3B(t *testing.T) {
 	// lagging server, so that it has to catch up.
 	cfg.partition([]int{0, 2}, []int{1})
 	{
+		DPrintf("[CFG]: partition, 0--2  1")
 		ck1 := cfg.makeClient([]int{0, 2})
 		Put(cfg, ck1, "c", "C")
 		Put(cfg, ck1, "d", "D")
@@ -661,6 +663,7 @@ func TestSnapshotRPC3B(t *testing.T) {
 	}
 
 	// now everybody
+	DPrintf("[CFG]: rejoin")
 	cfg.partition([]int{0, 1, 2}, []int{})
 
 	Put(cfg, ck, "e", "E")

@@ -118,6 +118,7 @@ type logEntry struct {
 	Index						int	 // logIndex will not match the index in slice, because of log discarding(snapshot)
 }
 
+
 // lock needed
 func (rf *Raft) resetElectionState() {
 	e := &rf.election
@@ -626,14 +627,23 @@ func (rf *Raft) leaderRestriction(args *RequestVoteArgs) bool {
 
 func (rf *Raft) sendAppendEntries(server int) {
 	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	if rf.killed() || rf.state != leader{
-		rf.mu.Unlock()
 		return
 	}
 	nextLogIndex := rf.logState.nextIndex[server]
-	preLogIndex := nextLogIndex - 1
-	preLogTerm := rf.logState.logs[preLogIndex].Term
 	nextSliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - nextLogIndex)
+	DPrintf("[Raft %v]: sendAppendEntries() to Raft %v, lastLogIndex = %v, nextLogIndex = %v, nextSliceIndex = %v",
+		rf.me, server, rf.logState.lastLogIndex, nextLogIndex, nextSliceIndex)
+	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+		if nextSliceIndex <= 1 {
+			go rf.sendInstallSnapshot(server)
+			return
+		}
+	}
+	preLogSliceIndex := nextSliceIndex - 1
+	preLogIndex := rf.logState.logs[preLogSliceIndex].Index
+	preLogTerm := rf.logState.logs[preLogSliceIndex].Term
 	entries := rf.logState.logs[nextSliceIndex : ]
 	args := &AppendEntriesArgs{
 		Term:         rf.curTerm,
@@ -653,7 +663,6 @@ func (rf *Raft) sendAppendEntries(server int) {
 
 	// handle ae reply
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
 	if !ok {
 		DPrintf("[Raft %v]: AppendEntries to Raft %v Failed.. no response.. myState = %v \n",
 			rf.me, server, rf.state)
@@ -811,7 +820,7 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 				reply.XIndex = i+1
 			}
 		}
-		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v, snapshot = %v, sliceIndex = %v",
+		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v, preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v, snapshot = %v, sliceIndex = %v",
 			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen, reply.Snapshot, sliceIndex)
 	}
 
@@ -880,8 +889,13 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 	if rf.killed() || rf.state != leader {
 		return
 	}
+
+	snapshotLog := rf.logState.logs[1]
 	snapshot := rf.persister.ReadSnapshot()
-	lastIncludeIndex, lastIncludeTerm := decodeMetadata(snapshot)
+	lastIncludeIndex := snapshotLog.Index
+	lastIncludeTerm := snapshotLog.Term
+	DPrintf("[Raft %v]: sendInstallSnapshot() to Raft %v, lastIncludeIndex = %v, lastIncludeTerm = %v",
+		rf.me, server, lastIncludeIndex, lastIncludeTerm)
 	args := &InstallSnapshotArgs{
 		Term:             rf.curTerm,
 		LeaderId:         rf.me,
@@ -900,6 +914,9 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 	}
 	if reply.Term > rf.curTerm {
 		rf.toFollower(reply.Term)
+	}else {
+		rf.logState.nextIndex[server] = lastIncludeIndex + 1
+		rf.logState.matchIndex[server] = lastIncludeIndex
 	}
 }
 
@@ -914,46 +931,50 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}else if rf.curTerm < args.Term {
 		rf.toFollower(args.Term)
 	}
+	lastIncludeIndex := args.LastIncludeIndex
+	lastIncludeTerm := args.LastIncludeTerm
 	// update logs and persist()
-	rf.updateLogsBySnapshot(args.Data)
+	rf.updateLogsBySnapshot(args.Data, lastIncludeIndex, lastIncludeTerm)
 	// apply snapshot to KV server
-	index, term := decodeMetadata(args.Data)
 	applyMsg := ApplyMsg{
 		CommandValid: false,			// false identifies snapshot
 		Command:      args.Data,
-		CommandIndex: index,
-		CommandTerm:  term,
+		CommandIndex: lastIncludeIndex,
+		CommandTerm:  lastIncludeTerm,
 	}
 	rf.applyCh <- applyMsg
-
 }
 
 // SaveSnapshot called by KV server
-func (rf *Raft) SaveSnapshot(snapshot []byte) {
+func (rf *Raft) SaveSnapshot(snapshot []byte, lastIncludeIndex int, lastIncludeTerm int) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	DPrintf("[Raft %v]: saveSnapshot(), curLog = %v",
+	DPrintf("[Raft %v]: SaveSnapshot(), curLog = %v",
 		rf.me, rf.logState.logs)
-	rf.updateLogsBySnapshot(snapshot)
+	rf.updateLogsBySnapshot(snapshot, lastIncludeIndex, lastIncludeTerm)
 
 }
 
 // updateLogsBySnapshot
 // leader: called by SaveSnapshot()
 // follower: called by InstallSnapshot() RPC handler
-func (rf *Raft) updateLogsBySnapshot(snapshot []byte) {
+func (rf *Raft) updateLogsBySnapshot(snapshot []byte, lastIncludeIndex int, lastIncludeTerm int) {
 	// lastIndex --> sliceIndex
-	lastIncludeIndex, lastIncludeTerm:= decodeMetadata(snapshot)
+	//lastIncludeIndex, lastIncludeTerm := decodeMetadata(snapshot)
 	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - lastIncludeIndex)
-	tmp := rf.logState.logs[sliceIndex : ]
+	tmp := make([]logEntry,0)
+	if sliceIndex+1 < len(rf.logState.logs) {
+		tmp = rf.logState.logs[sliceIndex+1 : ]
+	}
 	rf.logState.logs = rf.logState.logs[ : 1]
 	snapshotLog := logEntry{
-		Command: snapshot,
+		Command: nil,
 		Term:    lastIncludeTerm,
 		Index:   lastIncludeIndex,
 	}
 	rf.logState.logs = append(rf.logState.logs, snapshotLog)		// snapshot is a special logEntry, at sliceIndex = 1
 	rf.logState.logs = append(rf.logState.logs, tmp...)				// concat following logs
+	rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
 	DPrintf("[Raft %v]: updateLogsBySnapshot(), lastIncludeIndex = %v, sliceIndex = %v, newLog = %v",
 		rf.me, lastIncludeIndex, sliceIndex, rf.logState.logs)
 	rf.persist()
@@ -997,8 +1018,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		go rf.leaderAppendEntry()
 	}else {
 		isLeader = false
-		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
-			rf.me, command)
+		//DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
+		//	rf.me, command)
 	}
 
 	return index, term, isLeader
@@ -1090,13 +1111,17 @@ func getRandomTimeout() int {
 }
 
 
-func decodeMetadata(snapshot []byte) (
-	CommitIndex int, CommitTerm int) {
-	reader := bytes.NewBuffer(snapshot)
-	decoder := labgob.NewDecoder(reader)
-	if decoder.Decode(&CommitIndex) != nil ||
-		decoder.Decode(&CommitTerm) != nil {
-		DPrintf("Decode snapshot error...")
-	}
-	return
-}
+//func decodeMetadata(snapshot []byte) (CommitIndex int, CommitTerm int) {
+//	DPrintf("decodeMetadata(), snapshot = %v", snapshot)
+//	reader := bytes.NewBuffer(snapshot)
+//	decoder := labgob.NewDecoder(reader)
+//
+//	if decoder.Decode(&CommitIndex) != nil ||
+//		decoder.Decode(&CommitTerm) != nil {
+//		DPrintf("decodeMetadata(), Decode snapshot error...")
+//		return
+//	}
+//	DPrintf("decodeMetadata(), Decode snapshot succeed!, CommitIndex = %v, CommitTerm = %v",
+//		CommitIndex, CommitTerm)
+//	return
+//}
