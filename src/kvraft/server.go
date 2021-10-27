@@ -182,7 +182,7 @@ func (kv *KVServer) snapshotLoop() {
 		}
 
 		kv.mu.Unlock()
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 }
 
@@ -359,6 +359,12 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.CommitIndex = 0
 	kv.CommitTerm = 0
 	kv.persister = persister
+
+	snapshot := persister.ReadSnapshot()
+	if len(snapshot) != 0 {
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+	}
+
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)

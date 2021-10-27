@@ -117,7 +117,7 @@ cleanup() {
 	done
 	exit 0
 }
-trap cleanup SIGHUP SIGINT SIGTERM
+#trap cleanup SIGHUP SIGINT SIGTERM
 
 # Run remaining iterations (we may already have run some)
 for i in $(seq "$((success+failed+1))" "$runs"); do

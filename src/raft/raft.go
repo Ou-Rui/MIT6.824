@@ -318,6 +318,10 @@ func (rf *Raft) updateCommitLoop(term int) {
 			rf.me, rf.logState.lastLogIndex, nextCommit, sliceIndex)
 		if nextCommit > rf.logState.commitIndex && rf.logState.logs[sliceIndex].Term == rf.curTerm {
 			i := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - rf.logState.commitIndex) + 1
+			// snapshot
+			if i < 1 {
+				i = 2
+			}
 			for ; i <= sliceIndex; i++ {
 				applyMsg := ApplyMsg{
 					CommandValid: true,
@@ -864,7 +868,7 @@ func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 			tmpIndex = args.LeaderCommit
 		}
 		for _, log := range rf.logState.logs {
-			if log.Index > rf.logState.commitIndex && log.Index <= tmpIndex {
+			if log.Index > rf.logState.commitIndex && log.Index <= tmpIndex && log.Command != nil {
 				applyMsg := ApplyMsg{
 					CommandValid: 		true,
 					Command:      		log.Command,
