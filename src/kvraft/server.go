@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -25,9 +25,9 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 type OpType string
 
 const (
-	GetType    = "Get"
-	PutType    = "Put"
-	AppendType = "Append"
+	GetType    	OpType = "Get"
+	PutType    	OpType = "Put"
+	AppendType 	OpType = "Append"
 )
 
 // Op
@@ -37,18 +37,18 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	OpType OpType // string, Get/Put/Append
-	Key    string
-	Value  string
+	OpType 		OpType // string, Get/Put/Append
+	Key    		string
+	Value  		string
 
-	Id string // severID + term + index
+	Id 			string
 }
 
 type Result struct {
-	opType OpType
-	value  string
-	err    Err
-	status string
+	opType 		OpType
+	value  		string
+	err    		Err
+	status 		string
 }
 
 const (
@@ -66,10 +66,13 @@ type KVServer struct {
 	maxraftstate 		int // snapshot if log grows this big
 
 	// Your definitions here.
-	data        		map[string]string	// kv data
-	resultMap   		map[string]Result 	// key: requestId, value: result
+	Data        		map[string]string	// kv data
+	ResultMap   		map[string]Result 	// key: requestId, value: result
 	resultCond  		*sync.Cond
-	commitIndex 		int
+	CommitIndex 		int
+	CommitTerm			int
+
+	persister 			*raft.Persister
 }
 
 // removePrevious
@@ -78,12 +81,12 @@ type KVServer struct {
 func (kv *KVServer) removePrevious(requestIndex int, clientId int) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	for id, result := range kv.resultMap {
+	for id, result := range kv.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
 			DPrintf("[KV %v]: removePrevious, id = %v, preResult = %v",
 				kv.me, id, result)
-			kv.resultMap[id] = Result{}			// remove previous result
+			kv.ResultMap[id] = Result{}			// remove previous result
 		}
 	}
 }
@@ -99,21 +102,30 @@ func (kv *KVServer) applyLoop() {
 		DPrintf("[KV %v]: applyMsg = %v",
 			kv.me, applyMsg)
 		kv.mu.Lock()
-		op, _ := applyMsg.Command.(Op)
-		id := op.Id
-		DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-			kv.me, kv.commitIndex, applyMsg.CommandIndex, id, kv.resultMap[id].status)
+		if applyMsg.CommandValid {
+			// common log apply
+			op, _ := applyMsg.Command.(Op)
+			id := op.Id
+			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+				kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].status)
 
-		if applyMsg.CommandIndex >= kv.commitIndex {
-			kv.commitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
-			if kv.resultMap[id].status == "" {
-				result := kv.applyOne(op)          // apply
-				kv.resultMap[id] = result
+			if applyMsg.CommandIndex >= kv.CommitIndex {
+				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
+				kv.CommitTerm = applyMsg.CommandTerm
+				if kv.ResultMap[id].status == "" {
+					result := kv.applyOne(op)          // apply
+					kv.ResultMap[id] = result
+				}
+			}else {
+				DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
+					kv.me, kv.CommitIndex, applyMsg.CommandIndex)
 			}
 		}else {
-			DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
-				kv.me, kv.commitIndex, applyMsg.CommandIndex)
+			// snapshot apply
+			snapshot, _ := applyMsg.Command.([]byte)
+			kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
 		}
+
 		kv.mu.Unlock()
 	}
 }
@@ -127,7 +139,7 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 		status: Done,
 	}
 	if op.OpType == GetType {
-		value, ok := kv.data[op.Key]
+		value, ok := kv.Data[op.Key]
 		if ok {
 			result.value = value
 			result.err = OK
@@ -136,14 +148,14 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 			result.err = ErrNoKey
 		}
 	} else if op.OpType == PutType {
-		kv.data[op.Key] = op.Value
+		kv.Data[op.Key] = op.Value
 		result.err = OK
 	} else if op.OpType == AppendType {
-		value, ok := kv.data[op.Key]
+		value, ok := kv.Data[op.Key]
 		if ok {
-			kv.data[op.Key] = value + op.Value // append
+			kv.Data[op.Key] = value + op.Value // append
 		} else {
-			kv.data[op.Key] = op.Value // put
+			kv.Data[op.Key] = op.Value // put
 		}
 		result.err = OK
 	}
@@ -153,16 +165,35 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 }
 
 func (kv *KVServer) snapshotLoop() {
+	for  {
+		kv.mu.Lock()
+		if kv.killed() {
+			kv.mu.Unlock()
+			return
+		}
+		if kv.persister.RaftStateSize() > kv.maxraftstate {
+			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!",
+				kv.me)
+			snapshot := kv.generateSnapshot()
+			kv.rf.SaveSnapshot(snapshot)
+		}
 
+		kv.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
-func (kv *KVServer) getSnapshot() []byte {
+// generateSnapshot
+// encode state data of KV server, return a snapshot in []byte
+func (kv *KVServer) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
 
-	encoder.Encode(1)
-	//encoder.Encode(rf.election.votedFor)
-	//encoder.Encode(&rf.logState.logs)
+	encoder.Encode(kv.Data)
+	encoder.Encode(kv.ResultMap)
+	encoder.Encode(kv.CommitIndex)
+	encoder.Encode(kv.CommitTerm)
+
 	data := writer.Bytes()
 	return data
 }
@@ -175,9 +206,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
 		kv.me, args.Id, args.Key)
 
-	if kv.resultMap[args.Id].status != "" {
+	if kv.ResultMap[args.Id].status != "" {
 		DPrintf("[KV %v]: started..", kv.me)
-		reply.Value = kv.resultMap[args.Id].value
+		reply.Value = kv.ResultMap[args.Id].value
 		reply.Err = ErrAlreadyDone
 		return
 	}
@@ -197,7 +228,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	for kv.resultMap[op.Id].status != Done {
+	for kv.ResultMap[op.Id].status != Done {
 		kv.mu.Unlock()
 		time.Sleep(50 * time.Millisecond)
 		// check Leadership and Term
@@ -211,11 +242,11 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 			return
 		}
 	}
-	result := kv.resultMap[op.Id]
+	result := kv.ResultMap[op.Id]
 	reply.Err = result.err
 	reply.Value = result.value
 	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
-		kv.me, op.Id, args.Key, reply, kv.resultMap[op.Id].status)
+		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].status)
 
 	_, requestIndex, clientId := parseRequestId(args.Id)
 	go kv.removePrevious(requestIndex, clientId)
@@ -227,7 +258,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
 		kv.me, args.Id, args.Op, args.Key, args.Value)
-	if kv.resultMap[args.Id].status != "" {
+	if kv.ResultMap[args.Id].status != "" {
 		DPrintf("[KV %v]: started..", kv.me)
 		reply.Err = ErrAlreadyDone
 		return
@@ -247,7 +278,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	for kv.resultMap[op.Id].status != Done {
+	for kv.ResultMap[op.Id].status != Done {
 		kv.mu.Unlock()
 		time.Sleep(50 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
@@ -260,10 +291,10 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 			return
 		}
 	}
-	result := kv.resultMap[op.Id]
+	result := kv.ResultMap[op.Id]
 	reply.Err = result.err
 	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
-		kv.me, op.Id, reply, kv.resultMap[op.Id].status)
+		kv.me, op.Id, reply, kv.ResultMap[op.Id].status)
 
 	_, requestIndex, clientId := parseRequestId(args.Id)
 	go kv.removePrevious(requestIndex, clientId)
@@ -317,10 +348,12 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.maxraftstate = maxraftstate
 
 	// You may need initialization code here.
-	kv.data = make(map[string]string)
-	kv.resultMap = make(map[string]Result)
+	kv.Data = make(map[string]string)
+	kv.ResultMap = make(map[string]Result)
 	kv.resultCond = sync.NewCond(&kv.mu)
-	kv.commitIndex = 0
+	kv.CommitIndex = 0
+	kv.CommitTerm = 0
+	kv.persister = persister
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
@@ -344,6 +377,19 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 		//	id, opType, requestIndex, clientId)
 	}else {
 		DPrintf("parseRequestId error??? id = %v", id)
+	}
+	return
+}
+
+func DecodeSnapshot(snapshot []byte) (
+	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int) {
+	reader := bytes.NewBuffer(snapshot)
+	decoder := labgob.NewDecoder(reader)
+	if decoder.Decode(&Data) != nil ||
+		decoder.Decode(&ResultMap) != nil ||
+		decoder.Decode(&CommitIndex) != nil ||
+		decoder.Decode(&CommitTerm) != nil {
+		DPrintf("Decode snapshot error...")
 	}
 	return
 }

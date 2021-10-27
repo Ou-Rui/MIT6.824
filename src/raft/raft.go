@@ -27,7 +27,6 @@ import (
 )
 import "sync/atomic"
 import "mymr/src/labrpc"
-
 // import "bytes"
 // import "../labgob"
 
@@ -46,6 +45,7 @@ type ApplyMsg struct {
 	CommandValid 		bool
 	Command      		interface{}
 	CommandIndex 		int
+	CommandTerm			int
 }
 
 type raftState int
@@ -95,8 +95,8 @@ type election struct {
 // logState related info, a part of Raft (2B)
 type logState struct {
 	logs        []logEntry // slice of log entries
-	commitIndex int        // highest index of logs that has been committed
-	lastApplied int        // highest index of logs that applied to state machine
+	commitIndex int        // highest index of log that has been committed
+	commitTerm  int        // the term of log in commitIndex
 
 	// valid when rf.state == leader
 	nextIndex					[]int				// index of next log to send to each server
@@ -321,7 +321,8 @@ func (rf *Raft) updateCommitLoop(term int) {
 				applyMsg := ApplyMsg{
 					CommandValid: true,
 					Command:      rf.logState.logs[i].Command,
-					CommandIndex: i,
+					CommandIndex: rf.logState.logs[i].Index,
+					CommandTerm:  rf.logState.logs[i].Term,
 				}
 				DPrintf("[Raft %v]: Leader apply: %v",
 					rf.me, applyMsg)
@@ -329,8 +330,9 @@ func (rf *Raft) updateCommitLoop(term int) {
 			}
 
 			rf.logState.commitIndex = nextCommit
-			DPrintf("[Raft %v]: Leader update commitIndex = %v, curTerm = %v",
-				rf.me, rf.logState.commitIndex, rf.curTerm)
+			rf.logState.commitTerm = rf.logState.logs[sliceIndex].Term
+			DPrintf("[Raft %v]: Leader update commitIndex = %v, commitTerm = %v, curTerm = %v",
+				rf.me, rf.logState.commitIndex, rf.logState.commitTerm, rf.curTerm)
 
 		}
 		rf.mu.Unlock()
@@ -510,8 +512,14 @@ func (rf *Raft) sendRequestVote(server int) {
 	args := &RequestVoteArgs{
 		Term:         rf.curTerm,
 		CandidateId:  rf.me,
-		LastLogIndex: rf.logState.lastLogIndex,//len(rf.logState.logs) - 1,
-		LastLogTerm:  rf.logState.logs[rf.logState.lastLogIndex].Term,
+		//LastLogIndex: ,
+		//LastLogTerm:  ,
+	}
+	args.LastLogIndex = rf.logState.lastLogIndex
+	if len(rf.logState.logs) <= 1 {
+		args.LastLogTerm = rf.logState.commitTerm
+	}else {
+		args.LastLogTerm = rf.logState.logs[len(rf.logState.logs)-1].Term
 	}
 	DPrintf("[Raft %v]: send RequestVote to Raft %v, args = %v \n",
 		rf.me, server, args)
@@ -600,7 +608,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // determine whether the candidate is qualified for a leader, according to logs
 func (rf *Raft) leaderRestriction(args *RequestVoteArgs) bool {
 	lastLogIndex := rf.logState.lastLogIndex
-	lastLogTerm := rf.logState.logs[lastLogIndex].Term
+	var lastLogTerm int
+	if len(rf.logState.logs) <= 1 {
+		lastLogTerm = rf.logState.commitTerm
+	}else {
+		lastLogTerm = rf.logState.logs[len(rf.logState.logs)-1].Term
+	}
 	logFlag := false
 	if args.LastLogTerm > lastLogTerm || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex) {
 		logFlag = true
@@ -683,9 +696,15 @@ func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
 	// fast backup
 	DPrintf("[Raft %v]: fastBackup, nextIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
 		rf.me, rf.logState.nextIndex, reply.XTerm, reply.XIndex, reply.XLen)
+	//nextIndexBackup := rf.logState.nextIndex[server]
+	if reply.Snapshot {
+		go rf.sendInstallSnapshot(server)
+		return
+	}
 	if reply.XTerm == 0 && reply.XIndex == 0 && reply.XLen == 0 {
 		return
-	}else if reply.XTerm == -1 {
+	}
+	if reply.XTerm == -1 {
 		// if follower doesn't have a log in nextIndex, nextIndex = XLen
 		rf.logState.nextIndex[server] = reply.XLen
 	}else {
@@ -704,6 +723,15 @@ func (rf *Raft) fastBackup(server int, reply *AppendEntriesReply) {
 	}
 	DPrintf("[Raft %v]: Leader, Log Matching error in Raft %v, new nextIndex = %v\n",
 		rf.me, server, rf.logState.nextIndex)
+	// if raft doesn't contain the log in nextIndex[server]  ?????????????
+	//if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+	//	// log contains snapshot
+	//	if rf.logState.nextIndex[server] <= rf.logState.logs[1].Index {
+	//		// nextIndex locate in front of snapshot
+	//		rf.logState.nextIndex[server] = nextIndexBackup
+	//		go rf.sendInstallSnapshot(server)
+	//	}
+	//}
 }
 
 // AppendEntries RPC handler
@@ -749,30 +777,42 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 	DPrintf("[Raft %v]: curLogs = %v, preLogIndex = %v, preLogTerm = %v",
 		rf.me, rf.logState.logs, args.PreLogIndex, args.PreLogTerm)
 	ok := true
+	reply.Snapshot = false
 	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - args.PreLogIndex)
-	if len(rf.logState.logs) <= sliceIndex || rf.logState.logs[sliceIndex].Term != args.PreLogTerm {
+
+	if (len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 && sliceIndex < 1) ||
+		len(rf.logState.logs) <= sliceIndex || rf.logState.logs[sliceIndex].Term != args.PreLogTerm {
 		// preLog not match
 		reply.Success = false
+		ok = false
+		reply.XLen = rf.logState.lastLogIndex + 1
 		// fast backup
-		if len(rf.logState.logs) <= sliceIndex {
+		if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 && sliceIndex < 1 {
+			// sliceIndex locate inside snapshot
+			reply.Snapshot = true
+		}else if len(rf.logState.logs) <= sliceIndex {
 			// don't even have the log
 			reply.XTerm = -1
 			reply.XIndex = -1
 		}else {
 			// have conflicting log in diff term
-			reply.XTerm = rf.logState.logs[sliceIndex].Term
-			i := sliceIndex
-			for ; i >= 0; i-- {
-				if rf.logState.logs[i].Term != reply.XTerm {
-					break
+			if sliceIndex == 1 && rf.logState.logs[sliceIndex].Index > 1 {
+				// conflict at snapshot
+				reply.Snapshot = true
+			}else {
+				// conflict at common log
+				reply.XTerm = rf.logState.logs[sliceIndex].Term
+				i := sliceIndex
+				for ; i >= 0; i-- {
+					if rf.logState.logs[i].Term != reply.XTerm {
+						break
+					}
 				}
+				reply.XIndex = i+1
 			}
-			reply.XIndex = i+1
 		}
-		reply.XLen = rf.logState.lastLogIndex + 1
-		ok = false
-		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v",
-			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen)
+		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v, snapshot = %v, sliceIndex = %v",
+			rf.me, args.PreLogTerm, args.PreLogIndex, reply.XTerm, reply.XIndex, reply.XLen, reply.Snapshot, sliceIndex)
 	}
 
 	return ok
@@ -817,9 +857,10 @@ func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 		for _, log := range rf.logState.logs {
 			if log.Index > rf.logState.commitIndex && log.Index <= tmpIndex {
 				applyMsg := ApplyMsg{
-					CommandValid: true,
-					Command:      log.Command,
-					CommandIndex: log.Index,
+					CommandValid: 		true,
+					Command:      		log.Command,
+					CommandIndex: 		log.Index,
+					CommandTerm: 		log.Term,
 				}
 				DPrintf("[Raft %v]: Follower apply: %v",
 					rf.me, applyMsg)
@@ -834,11 +875,89 @@ func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 }
 
 func (rf *Raft) sendInstallSnapshot(server int) {
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.killed() || rf.state != leader {
+		return
+	}
+	snapshot := rf.persister.ReadSnapshot()
+	lastIncludeIndex, lastIncludeTerm := decodeMetadata(snapshot)
+	args := &InstallSnapshotArgs{
+		Term:             rf.curTerm,
+		LeaderId:         rf.me,
+		LastIncludeIndex: lastIncludeIndex,
+		LastIncludeTerm:  lastIncludeTerm,
+		Data:             snapshot,
+	}
+	reply := &InstallSnapshotReply{
+		Term: rf.curTerm,
+	}
+	rf.mu.Unlock()
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
+	rf.mu.Lock()
+	if !ok {
+		return
+	}
+	if reply.Term > rf.curTerm {
+		rf.toFollower(reply.Term)
+	}
 }
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("[Raft %v]: InstallSnapshot from Raft %v, myState = %v, hisTerm = %v ,myTerm = %v",
+		rf.me, args.LeaderId, rf.state, args.Term, rf.curTerm)
+	if rf.curTerm > args.Term {
+		reply.Term = rf.curTerm
+		return
+	}else if rf.curTerm < args.Term {
+		rf.toFollower(args.Term)
+	}
+	// update logs and persist()
+	rf.updateLogsBySnapshot(args.Data)
+	// apply snapshot to KV server
+	index, term := decodeMetadata(args.Data)
+	applyMsg := ApplyMsg{
+		CommandValid: false,			// false identifies snapshot
+		Command:      args.Data,
+		CommandIndex: index,
+		CommandTerm:  term,
+	}
+	rf.applyCh <- applyMsg
 
+}
+
+// SaveSnapshot called by KV server
+func (rf *Raft) SaveSnapshot(snapshot []byte) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	DPrintf("[Raft %v]: saveSnapshot(), curLog = %v",
+		rf.me, rf.logState.logs)
+	rf.updateLogsBySnapshot(snapshot)
+
+}
+
+// updateLogsBySnapshot
+// leader: called by SaveSnapshot()
+// follower: called by InstallSnapshot() RPC handler
+func (rf *Raft) updateLogsBySnapshot(snapshot []byte) {
+	// lastIndex --> sliceIndex
+	lastIncludeIndex, lastIncludeTerm:= decodeMetadata(snapshot)
+	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - lastIncludeIndex)
+	tmp := rf.logState.logs[sliceIndex : ]
+	rf.logState.logs = rf.logState.logs[ : 1]
+	snapshotLog := logEntry{
+		Command: snapshot,
+		Term:    lastIncludeTerm,
+		Index:   lastIncludeIndex,
+	}
+	rf.logState.logs = append(rf.logState.logs, snapshotLog)		// snapshot is a special logEntry, at sliceIndex = 1
+	rf.logState.logs = append(rf.logState.logs, tmp...)				// concat following logs
+	DPrintf("[Raft %v]: updateLogsBySnapshot(), lastIncludeIndex = %v, sliceIndex = %v, newLog = %v",
+		rf.me, lastIncludeIndex, sliceIndex, rf.logState.logs)
+	rf.persist()
+	rf.persister.SaveStateAndSnapshot(rf.persister.ReadRaftState(), snapshot)
 }
 
 // Start
@@ -948,7 +1067,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		Index:   0,
 	})
 	rf.logState.commitIndex = 0
-	rf.logState.lastApplied = 0
+	rf.logState.commitTerm = 0
 	rf.logState.nextIndex = make([]int, len(rf.peers))
 	rf.logState.matchIndex = make([]int, len(rf.peers))
 	rf.logState.logBuffer = []logEntry{}
@@ -968,4 +1087,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 // getRandomTimeout generate random timeout between [500 ~ 1000) ms
 func getRandomTimeout() int {
 	return rand.Intn(700) + 700
+}
+
+
+func decodeMetadata(snapshot []byte) (
+	CommitIndex int, CommitTerm int) {
+	reader := bytes.NewBuffer(snapshot)
+	decoder := labgob.NewDecoder(reader)
+	if decoder.Decode(&CommitIndex) != nil ||
+		decoder.Decode(&CommitTerm) != nil {
+		DPrintf("Decode snapshot error...")
+	}
+	return
 }

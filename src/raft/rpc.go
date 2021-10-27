@@ -41,6 +41,8 @@ type AppendEntriesReply struct {
 	XTerm				int
 	XIndex				int
 	XLen				int
+	// snapshot
+	Snapshot            bool
 }
 
 type InstallSnapshotArgs struct {
