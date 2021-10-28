@@ -30,7 +30,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
-	ck.clientId = nrand() % 1000000
+	ck.clientId = nrand()
 	ck.requestIndex = 0
 	return ck
 }
@@ -78,10 +78,10 @@ func (ck *Clerk) GetRequest(key string) string {
 			switch reply.Err {
 			case OK:
 				DPrintf("[CK]: Get succeed, leaderId = %v, key = %v, value = %v, requestIndex = %v",
-					ck.leaderId, args.Key, reply.Value, ck.requestIndex)
+					server, args.Key, reply.Value, ck.requestIndex)
 			case ErrAlreadyDone:
 				DPrintf("[CK]: Get AlreadyDone, leaderId = %v, key = %v, value = %v, requestIndex = %v",
-					ck.leaderId, args.Key, reply.Value, ck.requestIndex)
+					server, args.Key, reply.Value, ck.requestIndex)
 			case ErrNoKey:
 				DPrintf("[CK]: Get failed.. No key! return null")
 			}
@@ -91,7 +91,7 @@ func (ck *Clerk) GetRequest(key string) string {
 		}else if ok && reply.Err == ErrNewTerm {			// term has changed, the log may not be committed infinitely, retry!
 			ck.leaderId = server
 			DPrintf("[CK]: Get NewTerm, leaderId = %v, id = %v, key = %v,",
-				ck.leaderId, id, args.Key)
+				server, id, args.Key)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -150,7 +150,7 @@ func (ck *Clerk) PutAppendRequest(key string, value string, op string) {
 		}else if ok && reply.Err == ErrNewTerm {			// term has changed, the log may not be committed infinitely, retry!
 			ck.leaderId = server
 			DPrintf("[CK]: PutAppend NewTerm.. retrying.. leaderId = %v, id = %v, key = %v,",
-				ck.leaderId, id, args.Key)
+				server, id, args.Key)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

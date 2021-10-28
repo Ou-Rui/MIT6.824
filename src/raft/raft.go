@@ -274,7 +274,7 @@ func (rf *Raft) appendEntriesLoop() {
 			}
 		}
 		rf.mu.Unlock()
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -322,7 +322,7 @@ func (rf *Raft) updateCommitLoop(term int) {
 			if i < 1 {
 				i = 2
 			}
-			for ; i <= sliceIndex; i++ {
+			for ; i <= sliceIndex && i < len(rf.logState.logs); i++ {
 				applyMsg := ApplyMsg{
 					CommandValid: true,
 					Command:      rf.logState.logs[i].Command,
@@ -331,14 +331,16 @@ func (rf *Raft) updateCommitLoop(term int) {
 				}
 				DPrintf("[Raft %v]: Leader apply: %v",
 					rf.me, applyMsg)
+				//rf.mu.Unlock()
 				rf.applyCh <- applyMsg
+				//rf.mu.Lock()
+				rf.logState.commitTerm = applyMsg.CommandTerm
 			}
 
 			rf.logState.commitIndex = nextCommit
-			rf.logState.commitTerm = rf.logState.logs[sliceIndex].Term
+			//rf.logState.commitTerm = rf.logState.logs[sliceIndex].Term
 			DPrintf("[Raft %v]: Leader update commitIndex = %v, commitTerm = %v, curTerm = %v",
 				rf.me, rf.logState.commitIndex, rf.logState.commitTerm, rf.curTerm)
-
 		}
 		rf.mu.Unlock()
 	}
@@ -402,6 +404,20 @@ func (rf *Raft) GetState() (int, bool) {
 	}
 
 	return term, isLeader
+}
+
+// persistSnapshot
+// persist snapshot and raftState at the same time
+func (rf *Raft) persistSnapshot(snapshot []byte) {
+	writer1 := new(bytes.Buffer)
+	encoder1 := labgob.NewEncoder(writer1)
+
+	encoder1.Encode(rf.curTerm)
+	encoder1.Encode(rf.election.votedFor)
+	encoder1.Encode(&rf.logState.logs)
+	raftState := writer1.Bytes()
+
+	rf.persister.SaveStateAndSnapshot(raftState, snapshot)
 }
 
 //
@@ -640,7 +656,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 	DPrintf("[Raft %v]: sendAppendEntries() to Raft %v, lastLogIndex = %v, nextLogIndex = %v, nextSliceIndex = %v",
 		rf.me, server, rf.logState.lastLogIndex, nextLogIndex, nextSliceIndex)
 	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
-		if nextSliceIndex <= 1 {
+		// contain snapshot
+		if nextSliceIndex <= 1 || nextSliceIndex - 1 >= len(rf.logState.logs) {
 			go rf.sendInstallSnapshot(server)
 			return
 		}
@@ -649,7 +666,8 @@ func (rf *Raft) sendAppendEntries(server int) {
 	preLogIndex := rf.logState.logs[preLogSliceIndex].Index
 	preLogTerm := rf.logState.logs[preLogSliceIndex].Term
 	entries := rf.logState.logs[nextSliceIndex : ]
-	args := &AppendEntriesArgs{
+	DPrintf("[Raft %v]: AppendEntries to Raft %v, entries = %v", rf.me, server, entries)
+	args := AppendEntriesArgs{
 		Term:         rf.curTerm,
 		LeaderId:     rf.me,
 		PreLogIndex:  preLogIndex,
@@ -657,13 +675,13 @@ func (rf *Raft) sendAppendEntries(server int) {
 		Entries:      entries,
 		LeaderCommit: rf.logState.commitIndex,
 	}
-	reply := &AppendEntriesReply{
+	reply := AppendEntriesReply{
 		Term:    0,
 		Success: false,
 	}
 	rf.mu.Unlock()
 	// RPC Call
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	ok := rf.peers[server].Call("Raft.AppendEntries", &args, &reply)
 
 	// handle ae reply
 	rf.mu.Lock()
@@ -678,7 +696,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 		return
 	}
 
-	rf.handleAeReply(server, args, reply)
+	rf.handleAeReply(server, &args, &reply)
 }
 
 // handleAeReply, call by sendAppendEntries() when RPC return with reply
@@ -778,7 +796,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 	// delete/append logs
-	rf.updateLogs(args)
+	rf.updateLogs(args, reply)
 	// update commitIndex
 	rf.followerCommitAndApply(args)
 
@@ -833,12 +851,36 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 
 // updateLogs, called by AppendEntries() RPC handler
 // append / delete logs according to AppendEntriesArgs
-func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
-	for _, entry := range args.Entries {
+func (rf *Raft) updateLogs(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	DPrintf("[Raft %v]: updateLogs, args.Entries = %v", rf.me, args.Entries)
+
+	last := 0
+	for i := 0; i < len(args.Entries); i++ {
+		if i == 0 {
+			last = args.Entries[i].Index
+			continue
+		}
+		if last + 1 != args.Entries[i].Index {
+			DPrintf("[Raft %v]: Unknown error...", rf.me)
+			reply.Success = false
+			return
+		}
+		last = args.Entries[i].Index
+	}
+
+	for i := 0; i < len(args.Entries); i++ {
+		entry := args.Entries[i]
 		entryIndex := entry.Index
 		sliceIndex := (len(rf.logState.logs) - 1) - (rf.logState.lastLogIndex - entryIndex)
 		DPrintf("[Raft %v]: updateLogs, lastLogIndex = %v, entryIndex = %v, sliceIndex = %v",
 			rf.me, rf.logState.lastLogIndex, entryIndex, sliceIndex)
+		//if entryIndex > rf.logState.lastLogIndex && entryIndex != rf.logState.lastLogIndex+1 {
+		//	DPrintf("[Raft %v]: Unknown error...",
+		//		rf.me)
+		//	reply.Success = false
+		//	return
+		//}
+
 		if sliceIndex > 0 && sliceIndex < len(rf.logState.logs) &&
 			rf.logState.logs[sliceIndex].Term != entry.Term {
 			rf.logState.logs = rf.logState.logs[ : sliceIndex]
@@ -850,8 +892,9 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs) {
 		if sliceIndex < 0 || sliceIndex >= len(rf.logState.logs) || rf.logState.logs[sliceIndex] != entry{
 			rf.logState.logs = append(rf.logState.logs, entry)
 		}
+		rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
 	}
-	rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
+
 	DPrintf("[Raft %v]: all logs appended, new logs = %v, lastLogIndex = %v",
 		rf.me, rf.logState.logs, rf.logState.lastLogIndex)
 	rf.persist()
@@ -877,7 +920,9 @@ func (rf *Raft) followerCommitAndApply(args *AppendEntriesArgs) {
 				}
 				DPrintf("[Raft %v]: Follower apply: %v",
 					rf.me, applyMsg)
+				//rf.mu.Unlock()
 				rf.applyCh <- applyMsg
+				//rf.mu.Lock()
 			}
 		}
 
@@ -927,6 +972,10 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	if rf.killed() {
+		return
+	}
+
 	DPrintf("[Raft %v]: InstallSnapshot from Raft %v, myState = %v, hisTerm = %v ,myTerm = %v",
 		rf.me, args.LeaderId, rf.state, args.Term, rf.curTerm)
 	if rf.curTerm > args.Term {
@@ -937,6 +986,14 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	lastIncludeIndex := args.LastIncludeIndex
 	lastIncludeTerm := args.LastIncludeTerm
+	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+		// contain snapshot
+		if lastIncludeIndex <= rf.logState.logs[1].Index {
+			DPrintf("[Raft %v]: Outdated InstallSnapshot from Raft %v, hisLastIncludeIndex = %v, myLastIncludeIndex =%v",
+				rf.me, args.LeaderId, lastIncludeIndex, rf.logState.logs[1].Index)
+			return
+		}
+	}
 	// update logs and persist()
 	rf.updateLogsBySnapshot(args.Data, lastIncludeIndex, lastIncludeTerm)
 	// apply snapshot to KV server
@@ -946,17 +1003,32 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		CommandIndex: lastIncludeIndex,
 		CommandTerm:  lastIncludeTerm,
 	}
+	//rf.mu.Unlock()
 	rf.applyCh <- applyMsg
+	//rf.mu.Lock()
 }
 
-// SaveSnapshot called by KV server
+// SaveSnapshot
+// goroutine. started by KV server snapshotLoop()
 func (rf *Raft) SaveSnapshot(snapshot []byte, lastIncludeIndex int, lastIncludeTerm int) {
+	if rf.killed() {
+		return
+	}
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	DPrintf("[Raft %v]: SaveSnapshot(), curLog = %v",
 		rf.me, rf.logState.logs)
+	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+		// contain snapshot
+		if lastIncludeIndex <= rf.logState.logs[1].Index {
+			DPrintf("[Raft %v]: Outdated snapshot..., lastIncludeIndex = %v, curSnapshotIndex = %v",
+				rf.me, lastIncludeIndex, rf.logState.logs[1].Index)
+			return
+		}
+	}
 	rf.updateLogsBySnapshot(snapshot, lastIncludeIndex, lastIncludeTerm)
-
+	DPrintf("[Raft %v]: Snapshot Done, size = %v",
+		rf.me, rf.persister.RaftStateSize())
 }
 
 // updateLogsBySnapshot
@@ -967,7 +1039,7 @@ func (rf *Raft) updateLogsBySnapshot(snapshot []byte, lastIncludeIndex int, last
 	//lastIncludeIndex, lastIncludeTerm := decodeMetadata(snapshot)
 	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - lastIncludeIndex)
 	tmp := make([]logEntry,0)
-	if sliceIndex+1 < len(rf.logState.logs) {
+	if sliceIndex+1 < len(rf.logState.logs) && sliceIndex+1 > 0 {
 		tmp = rf.logState.logs[sliceIndex+1 : ]
 	}
 	rf.logState.logs = rf.logState.logs[ : 1]
@@ -979,10 +1051,11 @@ func (rf *Raft) updateLogsBySnapshot(snapshot []byte, lastIncludeIndex int, last
 	rf.logState.logs = append(rf.logState.logs, snapshotLog)		// snapshot is a special logEntry, at sliceIndex = 1
 	rf.logState.logs = append(rf.logState.logs, tmp...)				// concat following logs
 	rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
+
+	rf.logState.commitIndex = lastIncludeIndex
 	DPrintf("[Raft %v]: updateLogsBySnapshot(), lastIncludeIndex = %v, sliceIndex = %v, newLog = %v",
 		rf.me, lastIncludeIndex, sliceIndex, rf.logState.logs)
-	rf.persist()
-	rf.persister.SaveStateAndSnapshot(rf.persister.ReadRaftState(), snapshot)
+	rf.persistSnapshot(snapshot)
 }
 
 // Start

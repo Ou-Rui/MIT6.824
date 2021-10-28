@@ -123,8 +123,12 @@ func (kv *KVServer) applyLoop() {
 			go kv.removePrevious(requestIndex, clientId)
 		}else {
 			// snapshot apply
+			DPrintf("[KV %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			snapshot, _ := applyMsg.Command.([]byte)
 			kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+			DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 		}
 
 		kv.mu.Unlock()
@@ -160,8 +164,8 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 		}
 		result.Err = OK
 	}
-	DPrintf("[KV %v]: applyOne, id = %v, key = %v, value = %v",
-		kv.me, op.Id, op.Key, op.Value)
+	DPrintf("[KV %v]: applyOne, id = %v, key = %v, value = %v, newValue = %v",
+		kv.me, op.Id, op.Key, op.Value, kv.Data[op.Key])
 	return
 }
 
@@ -176,11 +180,15 @@ func (kv *KVServer) snapshotLoop() {
 			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!, size = %v",
 				kv.me, kv.persister.RaftStateSize())
 			snapshot := kv.generateSnapshot()
-			kv.rf.SaveSnapshot(snapshot, kv.CommitIndex, kv.CommitTerm)
-			DPrintf("[KV %v]: Snapshot Done, size = %v",
-				kv.me, kv.persister.RaftStateSize())
+			commitIndex := kv.CommitIndex
+			commitTerm := kv.CommitTerm
+			kv.mu.Unlock()
+			kv.rf.SaveSnapshot(snapshot, commitIndex, commitTerm)
+			kv.mu.Lock()
+			//DPrintf("[KV %v]: Snapshot Done, size = %v",
+			//	kv.me, kv.persister.RaftStateSize())
+			//kv.persister.SaveStateAndSnapshot(kv.persister.ReadRaftState(), snapshot)
 		}
-
 		kv.mu.Unlock()
 		time.Sleep(200 * time.Millisecond)
 	}
@@ -191,7 +199,7 @@ func (kv *KVServer) snapshotLoop() {
 func (kv *KVServer) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
-	DPrintf("len: data = %v, resultMap = %v", len(kv.Data), len(kv.ResultMap))
+	DPrintf("[KV %v]: data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
 	encoder.Encode(kv.Data)
 
 	encoder.Encode(kv.ResultMap)
@@ -363,6 +371,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
 		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+		DPrintf("[KV %v] read from persister, data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
 	}
 
 
