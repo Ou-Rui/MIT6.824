@@ -118,6 +118,9 @@ type logEntry struct {
 	Index						int	 // logIndex will not match the index in slice, because of log discarding(snapshot)
 }
 
+func (rf *Raft) containsSnapshot() bool {
+	return len(rf.logState.logs) > 1 && rf.logState.logs[1].Command == nil
+}
 
 // lock needed
 func (rf *Raft) resetElectionState() {
@@ -655,7 +658,7 @@ func (rf *Raft) sendAppendEntries(server int) {
 	nextSliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - nextLogIndex)
 	DPrintf("[Raft %v]: sendAppendEntries() to Raft %v, lastLogIndex = %v, nextLogIndex = %v, nextSliceIndex = %v",
 		rf.me, server, rf.logState.lastLogIndex, nextLogIndex, nextSliceIndex)
-	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+	if rf.containsSnapshot() {
 		// contain snapshot
 		if nextSliceIndex <= 1 || nextSliceIndex - 1 >= len(rf.logState.logs) {
 			go rf.sendInstallSnapshot(server)
@@ -992,14 +995,20 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	lastIncludeIndex := args.LastIncludeIndex
 	lastIncludeTerm := args.LastIncludeTerm
-	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
-		// contain snapshot
-		if lastIncludeIndex <= rf.logState.logs[1].Index {
-			DPrintf("[Raft %v]: Outdated InstallSnapshot from Raft %v, hisLastIncludeIndex = %v, myLastIncludeIndex =%v",
-				rf.me, args.LeaderId, lastIncludeIndex, rf.logState.logs[1].Index)
-			return
-		}
+
+	if lastIncludeIndex <= rf.logState.commitIndex {
+		DPrintf("[Raft %v]: Outdated InstallSnapshot from Raft %v, hisLastIncludeIndex = %v, myCommitIndex = %v",
+			rf.me, args.LeaderId, lastIncludeIndex, rf.logState.commitIndex)
+		return
 	}
+	//if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+	//	// contain snapshot
+	//	if lastIncludeIndex <= rf.logState.logs[1].Index {
+	//		DPrintf("[Raft %v]: Outdated InstallSnapshot from Raft %v, hisLastIncludeIndex = %v, myLastIncludeIndex =%v",
+	//			rf.me, args.LeaderId, lastIncludeIndex, rf.logState.logs[1].Index)
+	//		return
+	//	}
+	//}
 	// update logs and persist()
 	rf.updateLogsBySnapshot(args.Data, lastIncludeIndex, lastIncludeTerm)
 	// apply snapshot to KV server
@@ -1024,7 +1033,7 @@ func (rf *Raft) SaveSnapshot(snapshot []byte, lastIncludeIndex int, lastIncludeT
 	defer rf.mu.Unlock()
 	DPrintf("[Raft %v]: SaveSnapshot(), curLog = %v",
 		rf.me, rf.logState.logs)
-	if len(rf.logState.logs) > 1 && rf.logState.logs[1].Index != 1 {
+	if rf.containsSnapshot() {
 		// contain snapshot
 		if lastIncludeIndex <= rf.logState.logs[1].Index {
 			DPrintf("[Raft %v]: Outdated snapshot..., lastIncludeIndex = %v, curSnapshotIndex = %v",
@@ -1044,17 +1053,20 @@ func (rf *Raft) updateLogsBySnapshot(snapshot []byte, lastIncludeIndex int, last
 	// lastIndex --> sliceIndex
 	//lastIncludeIndex, lastIncludeTerm := decodeMetadata(snapshot)
 	sliceIndex := (len(rf.logState.logs)-1) - (rf.logState.lastLogIndex - lastIncludeIndex)
-	tmp := make([]logEntry,0)
-	if sliceIndex+1 < len(rf.logState.logs) && sliceIndex+1 > 0 {
+	tmp := make([]logEntry, 0)
+	if sliceIndex+1 < len(rf.logState.logs) && sliceIndex+1 > 1 {
 		tmp = rf.logState.logs[sliceIndex+1 : ]
 	}
 	rf.logState.logs = rf.logState.logs[ : 1]
-	snapshotLog := logEntry{
-		Command: nil,
-		Term:    lastIncludeTerm,
-		Index:   lastIncludeIndex,
+	if len(snapshot) != 0 {
+		snapshotLog := logEntry{
+			Command: nil,
+			Term:    lastIncludeTerm,
+			Index:   lastIncludeIndex,
+		}
+		rf.logState.logs = append(rf.logState.logs, snapshotLog)		// snapshot is a special logEntry, at sliceIndex = 1
 	}
-	rf.logState.logs = append(rf.logState.logs, snapshotLog)		// snapshot is a special logEntry, at sliceIndex = 1
+
 	rf.logState.logs = append(rf.logState.logs, tmp...)				// concat following logs
 	rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
 

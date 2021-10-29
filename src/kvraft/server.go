@@ -126,7 +126,15 @@ func (kv *KVServer) applyLoop() {
 			DPrintf("[KV %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			snapshot, _ := applyMsg.Command.([]byte)
-			kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+			if len(snapshot) > 0 {
+				kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+			}else {
+				kv.Data = make(map[string]string)
+				kv.ResultMap = make(map[string]Result)
+				kv.CommitIndex = 0
+				kv.CommitTerm = 0
+			}
+
 			DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 		}
