@@ -179,12 +179,18 @@ func (kv *KVServer) snapshotLoop() {
 		if kv.persister.RaftStateSize() > kv.maxraftstate {
 			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!, size = %v",
 				kv.me, kv.persister.RaftStateSize())
-			snapshot := kv.generateSnapshot()
-			commitIndex := kv.CommitIndex
-			commitTerm := kv.CommitTerm
-			kv.mu.Unlock()
-			kv.rf.SaveSnapshot(snapshot, commitIndex, commitTerm)
-			kv.mu.Lock()
+			if kv.CommitIndex == 0 {
+				DPrintf("[KV %v]: commitIndex == 0, nothing to snapshot...",
+					kv.me)
+			}else{
+				snapshot := kv.generateSnapshot()
+				commitIndex := kv.CommitIndex
+				commitTerm := kv.CommitTerm
+				kv.mu.Unlock()
+				kv.rf.SaveSnapshot(snapshot, commitIndex, commitTerm)
+				kv.mu.Lock()
+			}
+
 			//DPrintf("[KV %v]: Snapshot Done, size = %v",
 			//	kv.me, kv.persister.RaftStateSize())
 			//kv.persister.SaveStateAndSnapshot(kv.persister.ReadRaftState(), snapshot)
