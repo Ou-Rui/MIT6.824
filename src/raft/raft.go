@@ -854,6 +854,12 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 func (rf *Raft) updateLogs(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	DPrintf("[Raft %v]: updateLogs, args.Entries = %v", rf.me, args.Entries)
 
+	if len(args.Entries) > 0 && args.Entries[0].Index != args.PreLogIndex+1 {
+		DPrintf("[Raft %v]: Unknown error1...", rf.me)
+		reply.Success = false
+		return
+	}
+
 	last := 0
 	for i := 0; i < len(args.Entries); i++ {
 		if i == 0 {
@@ -861,7 +867,7 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 			continue
 		}
 		if last + 1 != args.Entries[i].Index {
-			DPrintf("[Raft %v]: Unknown error...", rf.me)
+			DPrintf("[Raft %v]: Unknown error2...", rf.me)
 			reply.Success = false
 			return
 		}
