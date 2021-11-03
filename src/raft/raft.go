@@ -668,7 +668,9 @@ func (rf *Raft) sendAppendEntries(server int) {
 	preLogSliceIndex := nextSliceIndex - 1
 	preLogIndex := rf.logState.logs[preLogSliceIndex].Index
 	preLogTerm := rf.logState.logs[preLogSliceIndex].Term
-	entries := rf.logState.logs[nextSliceIndex : ]
+	// if use "entries := rf.logState.logs[nextSliceIndex : ]"， entries will be a ptr toward array inside rf.logState.logs
+	entries := make([]logEntry, len(rf.logState.logs[nextSliceIndex : ]))
+	copy(entries, rf.logState.logs[nextSliceIndex : ])
 	DPrintf("[Raft %v]: AppendEntries to Raft %v, entries = %v", rf.me, server, entries)
 	args := AppendEntriesArgs{
 		Term:         rf.curTerm,
