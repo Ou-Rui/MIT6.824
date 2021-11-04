@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -138,8 +138,8 @@ func (kv *KVServer) applyLoop() {
 			DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 		}
-
 		kv.mu.Unlock()
+		//kv.resultCond.Broadcast()
 	}
 }
 
@@ -256,8 +256,9 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
+		//kv.resultCond.Wait()
 		kv.mu.Unlock()
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		// check Leadership and Term
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
@@ -274,9 +275,6 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	reply.Value = result.Value
 	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
 		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].Status)
-
-	//_, requestIndex, clientId := parseRequestId(args.Id)
-	//go kv.removePrevious(requestIndex, clientId)
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
@@ -306,8 +304,9 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
+		//kv.resultCond.Wait()
 		kv.mu.Unlock()
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
 		if !isLeader {

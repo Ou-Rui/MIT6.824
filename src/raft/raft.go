@@ -281,7 +281,7 @@ func (rf *Raft) appendEntriesLoop() {
 			}
 		}
 		rf.mu.Unlock()
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -360,6 +360,10 @@ func (rf *Raft) leaderAppendEntry()  {
 	rf.logState.muLb.Lock()
 	defer rf.logState.muLb.Unlock()
 
+	if rf.killed() || rf.state != leader {
+		return
+	}
+
 	if len(rf.logState.logBuffer) == 0 {
 		DPrintf("[Raft %v]: Leader nothing to append in buffer, logs = %v",
 			rf.me, rf.logState.logs)
@@ -375,8 +379,22 @@ func (rf *Raft) leaderAppendEntry()  {
 	DPrintf("[Raft %v]: leader logs = %v",
 		rf.me, rf.logState.logs)
 	rf.logState.logBuffer = []logEntry{}			// delete logBuffer
-
 	rf.persist()
+
+	//minMatchIndex := rf.logState.lastLogIndex
+	//for i := 0; i < len(rf.peers); i++ {
+	//	if rf.logState.matchIndex[i] < minMatchIndex {
+	//		minMatchIndex = rf.logState.matchIndex[i]
+	//	}
+	//}
+	//DPrintf("minMatchIndex = %v, lastLogIndex = %v", minMatchIndex, rf.logState.lastLogIndex)
+	//if rf.logState.lastLogIndex - minMatchIndex > 10 {
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			go rf.sendAppendEntries(i)
+		}
+	}
+	//}
 }
 
 // newElection require rf.mu.Lock()
@@ -852,26 +870,6 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 func (rf *Raft) updateLogs(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	DPrintf("[Raft %v]: updateLogs, args.Entries = %v", rf.me, args.Entries)
 
-	//if len(args.Entries) > 0 && args.Entries[0].Index != args.PreLogIndex+1 {
-	//	DPrintf("[Raft %v]: Unknown error1...", rf.me)
-	//	reply.Success = false
-	//	return
-	//}
-
-	//last := 0
-	//for i := 0; i < len(args.Entries); i++ {
-	//	if i == 0 {
-	//		last = args.Entries[i].Index
-	//		continue
-	//	}
-	//	if last + 1 != args.Entries[i].Index {
-	//		DPrintf("[Raft %v]: Unknown error2...", rf.me)
-	//		reply.Success = false
-	//		return
-	//	}
-	//	last = args.Entries[i].Index
-	//}
-
 	for i := 0; i < len(args.Entries); i++ {
 		entry := args.Entries[i]
 		entryIndex := entry.Index
@@ -1177,6 +1175,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 // getRandomTimeout generate random timeout between [500 ~ 1000) ms
 func getRandomTimeout() int {
-	return rand.Intn(700) + 700
+	return rand.Intn(350) + 350
 }
 

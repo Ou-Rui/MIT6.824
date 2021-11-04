@@ -738,3 +738,44 @@ func TestSnapshotUnreliableRecoverConcurrentPartitionLinearizable3B(t *testing.T
 	// Test: unreliable net, restarts, partitions, snapshots, linearizability checks (3B) ...
 	GenericTestLinearizability(t, "3B", 15, 7, true, true, true, 1000)
 }
+
+
+// Check that ops are committed fast enough, better than 1 per heartbeat interval
+func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
+	const nservers = 3
+	const numOps = 1000
+	cfg := make_config(t, nservers, false, maxraftstate)
+	defer cfg.cleanup()
+
+	ck := cfg.makeClient(cfg.All())
+
+	cfg.begin(fmt.Sprintf("Test: ops complete fast enough (%s)", part))
+
+	// wait until first op completes, so we know a leader is elected
+	// and KV servers are ready to process client requests
+	ck.GetRequest("x")
+
+	start := time.Now()
+	for i := 0; i < numOps; i++ {
+		ck.AppendRequest("x", "x 0 "+strconv.Itoa(i)+" y")
+	}
+	dur := time.Since(start)
+
+	v := ck.GetRequest("x")
+	checkClntAppends(t, 0, v, numOps)
+
+	// heartbeat interval should be ~ 100 ms; require at least 3 ops per
+	const heartbeatInterval = 100 * time.Millisecond
+	const opsPerInterval = 3
+	const timePerOp = heartbeatInterval / opsPerInterval
+	if dur > numOps*timePerOp {
+		t.Fatalf("Operations completed too slowly %v/op > %v/op\n", dur/numOps, timePerOp)
+	}
+
+	cfg.end()
+}
+
+
+//func TestSpeed3A(t *testing.T) {
+//	GenericTestSpeed(t, "3A", -1)
+//}
