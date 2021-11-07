@@ -112,12 +112,12 @@ cleanup() {
 	for pid in "${waits[@]}"; do
 		kill "$pid"
 		wait "$pid"
-		rm -rf "./test-log/test-${is[0]}.err" "./test-log/test-${is[0]}.log"
+#		rm -rf "./test-log/test-${is[0]}.err" "./test-log/test-${is[0]}.log"
 		is=("${is[@]:1}")
 	done
 	exit 0
 }
-#trap cleanup SIGHUP SIGINT SIGTERM
+trap cleanup SIGHUP SIGINT SIGTERM
 
 # Run remaining iterations (we may already have run some)
 for i in $(seq "$((success+failed+1))" "$runs"); do

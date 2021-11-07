@@ -191,8 +191,17 @@ func (rf *Raft) toFollower(term int)  {
 	rf.state = follower
 	rf.curTerm = term
 	rf.resetElectionState()
-
+	rf.logState.muLb.Lock()
+	rf.logState.logBuffer = make([]logEntry, 0)
+	rf.logState.muLb.Unlock()
 	rf.persist()
+	applyMsg := ApplyMsg {
+		CommandValid: false,
+		Command:      nil,
+		CommandIndex: 0,
+		CommandTerm:  -10,
+	}
+	rf.applyCh <- applyMsg
 }
 
 // timeoutLoop
@@ -381,20 +390,11 @@ func (rf *Raft) leaderAppendEntry()  {
 	rf.logState.logBuffer = []logEntry{}			// delete logBuffer
 	rf.persist()
 
-	//minMatchIndex := rf.logState.lastLogIndex
-	//for i := 0; i < len(rf.peers); i++ {
-	//	if rf.logState.matchIndex[i] < minMatchIndex {
-	//		minMatchIndex = rf.logState.matchIndex[i]
-	//	}
-	//}
-	//DPrintf("minMatchIndex = %v, lastLogIndex = %v", minMatchIndex, rf.logState.lastLogIndex)
-	//if rf.logState.lastLogIndex - minMatchIndex > 10 {
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
 			go rf.sendAppendEntries(i)
 		}
 	}
-	//}
 }
 
 // newElection require rf.mu.Lock()
@@ -573,7 +573,6 @@ func (rf *Raft) sendRequestVote(server int) {
 		Term:        0,
 		VoteGranted: false,
 	}
-	//rf.election.votesSendWg.Done()
 
 	rf.mu.Unlock()
 
@@ -1086,8 +1085,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		go rf.leaderAppendEntry()
 	}else {
 		isLeader = false
-		//DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
-		//	rf.me, command)
+		DPrintf("[Raft %v]: Receive Command, Im not Leader.. ignore.. command = %v",
+			rf.me, command)
 	}
 
 	return index, term, isLeader

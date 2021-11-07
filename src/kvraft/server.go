@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -122,24 +122,29 @@ func (kv *KVServer) applyLoop() {
 			_, requestIndex, clientId := parseRequestId(id)
 			go kv.removePrevious(requestIndex, clientId)
 		}else {
-			// snapshot apply
-			DPrintf("[KV %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
-			snapshot, _ := applyMsg.Command.([]byte)
-			if len(snapshot) > 0 {
-				kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+			if applyMsg.CommandTerm == -10 {
+				DPrintf("[KV %v]: toFollower apply", kv.me)
 			}else {
-				kv.Data = make(map[string]string)
-				kv.ResultMap = make(map[string]Result)
-				kv.CommitIndex = 0
-				kv.CommitTerm = 0
-			}
+				// snapshot apply
+				DPrintf("[KV %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+				snapshot, _ := applyMsg.Command.([]byte)
+				if len(snapshot) > 0 {
+					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+				}else {
+					kv.Data = make(map[string]string)
+					kv.ResultMap = make(map[string]Result)
+					kv.CommitIndex = 0
+					kv.CommitTerm = 0
+				}
 
-			DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-				kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+				DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+			}
 		}
+		kv.resultCond.Broadcast()
 		kv.mu.Unlock()
-		//kv.resultCond.Broadcast()
+
 	}
 }
 
@@ -232,14 +237,12 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
 		kv.me, args.Id, args.Key)
-
 	if kv.ResultMap[args.Id].Status != "" {
 		DPrintf("[KV %v]: started..", kv.me)
 		reply.Value = kv.ResultMap[args.Id].Value
 		reply.Err = ErrAlreadyDone
 		return
 	}
-
 	op := Op{
 		OpType: 		GetType,
 		Key:   			args.Key,
@@ -256,13 +259,15 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		//kv.resultCond.Wait()
+		kv.resultCond.Wait()
 		kv.mu.Unlock()
-		time.Sleep(10 * time.Millisecond)
+		//time.Sleep(10 * time.Millisecond)
 		// check Leadership and Term
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
-		if !isLeader {
+		DPrintf("[KV %v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
+			kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
+		if !isLeader || kv.killed() {
 			reply.Err = ErrWrongLeader
 			return
 		}else if term != curTerm{
@@ -304,12 +309,14 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		//kv.resultCond.Wait()
+		kv.resultCond.Wait()
 		kv.mu.Unlock()
-		time.Sleep(10 * time.Millisecond)
+		//time.Sleep(10 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
-		if !isLeader {
+		DPrintf("[KV %v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
+			kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
+		if !isLeader || kv.killed() {
 			reply.Err = ErrWrongLeader
 			return
 		}else if term != curTerm {
@@ -321,9 +328,6 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	reply.Err = result.Err
 	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
 		kv.me, op.Id, reply, kv.ResultMap[op.Id].Status)
-
-	//_, requestIndex, clientId := parseRequestId(args.Id)
-	//go kv.removePrevious(requestIndex, clientId)
 }
 
 // Kill
@@ -343,6 +347,7 @@ func (kv *KVServer) Kill() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v]: killed..", kv.me)
+	kv.resultCond.Broadcast()
 }
 
 func (kv *KVServer) killed() bool {
