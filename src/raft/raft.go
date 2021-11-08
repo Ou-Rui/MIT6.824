@@ -854,7 +854,7 @@ func (rf *Raft) logMatching(args *AppendEntriesArgs, reply *AppendEntriesReply) 
 						break
 					}
 				}
-				reply.XIndex = i+1
+				reply.XIndex = rf.logState.logs[i+1].Index
 			}
 		}
 		DPrintf("[Raft %v]: Log Matching Failed, preLogTerm = %v, preLogIndex = %v, XTerm = %v, XIndex = %v, XLen = %v, snapshot = %v, sliceIndex = %v",
@@ -958,10 +958,14 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 	if reply.Term > rf.curTerm {
 		rf.toFollower(reply.Term)
 	}else {
-		DPrintf("[Raft %v]: sendInstallSnapshot reply, reply.NextIndex = %v",
-			rf.me, reply.NextIndex)
-		rf.logState.nextIndex[server] = reply.NextIndex
-		rf.logState.matchIndex[server] = reply.NextIndex - 1
+		DPrintf("[Raft %v]: sendInstallSnapshot reply, reply.NextIndex = %v, lastLogIndex = %v",
+			rf.me, rf.logState.lastLogIndex)
+		if reply.NextIndex == args.LastIncludeIndex+1 {
+			rf.logState.nextIndex[server] = args.LastIncludeIndex + 1
+			rf.logState.matchIndex[server] = args.LastIncludeIndex
+		}else {
+			rf.logState.nextIndex[server] = rf.logState.lastLogIndex + 1
+		}
 	}
 }
 
