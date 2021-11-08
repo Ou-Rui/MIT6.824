@@ -81,11 +81,11 @@ type KVServer struct {
 func (kv *KVServer) removePrevious(requestIndex int, clientId int) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	DPrintf("[KV %v]: removePrevious", kv.me)
 	for id, _ := range kv.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
-			//DPrintf("[KV %v]: removePrevious, id = %v, preResult = %v",
-			//	kv.me, id, result)
+
 			delete(kv.ResultMap, id)			// remove previous result
 		}
 	}
@@ -142,9 +142,8 @@ func (kv *KVServer) applyLoop() {
 					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			}
 		}
-		kv.resultCond.Broadcast()
 		kv.mu.Unlock()
-
+		kv.resultCond.Broadcast()
 	}
 }
 
@@ -185,6 +184,7 @@ func (kv *KVServer) applyOne(op Op) (result Result) {
 func (kv *KVServer) snapshotLoop() {
 	for  {
 		kv.mu.Lock()
+		DPrintf("[KV %v]: snapshotLoop lock", kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
 			return
@@ -259,6 +259,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
+		DPrintf("[KV %v]: sleep..", kv.me)
 		kv.resultCond.Wait()
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
@@ -309,6 +310,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
+		DPrintf("[KV %v]: sleep..", kv.me)
 		kv.resultCond.Wait()
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)

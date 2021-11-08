@@ -55,4 +55,5 @@ type InstallSnapshotArgs struct {
 
 type InstallSnapshotReply struct {
 	Term 				int
+	NextIndex			int
 }

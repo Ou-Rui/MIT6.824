@@ -946,7 +946,8 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 		Data:             snapshot,
 	}
 	reply := &InstallSnapshotReply{
-		Term: rf.curTerm,
+		Term:      rf.curTerm,
+		NextIndex: 0,
 	}
 	rf.mu.Unlock()
 	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
@@ -957,8 +958,10 @@ func (rf *Raft) sendInstallSnapshot(server int) {
 	if reply.Term > rf.curTerm {
 		rf.toFollower(reply.Term)
 	}else {
-		rf.logState.nextIndex[server] = lastIncludeIndex + 1
-		rf.logState.matchIndex[server] = lastIncludeIndex
+		DPrintf("[Raft %v]: sendInstallSnapshot reply, reply.NextIndex = %v",
+			rf.me, reply.NextIndex)
+		rf.logState.nextIndex[server] = reply.NextIndex
+		rf.logState.matchIndex[server] = reply.NextIndex - 1
 	}
 }
 
@@ -983,10 +986,12 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	if lastIncludeIndex <= rf.logState.commitIndex {
 		DPrintf("[Raft %v]: Outdated InstallSnapshot from Raft %v, hisLastIncludeIndex = %v, myCommitIndex = %v",
 			rf.me, args.LeaderId, lastIncludeIndex, rf.logState.commitIndex)
+		reply.NextIndex = rf.logState.lastLogIndex + 1
 		return
 	}
 	// update logs and persist()
 	rf.updateLogsBySnapshot(args.Data, lastIncludeIndex, lastIncludeTerm)
+	reply.NextIndex = rf.logState.lastLogIndex + 1
 	// apply snapshot to KV server
 	applyMsg := ApplyMsg{
 		CommandValid: false,			// false identifies snapshot
