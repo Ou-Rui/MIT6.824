@@ -1,10 +1,10 @@
 package shardmaster
 
 
-import "../raft"
-import "../labrpc"
+import "mymr/src/raft"
+import "mymr/src/labrpc"
 import "sync"
-import "../labgob"
+import "mymr/src/labgob"
 
 
 type ShardMaster struct {
