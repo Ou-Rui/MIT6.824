@@ -78,6 +78,7 @@ func check_same_config(t *testing.T, c1 Config, c2 Config) {
 }
 
 func TestBasic(t *testing.T) {
+	// make 3 shard master
 	const nservers = 3
 	cfg := make_config(t, nservers, false)
 	defer cfg.cleanup()
@@ -86,7 +87,7 @@ func TestBasic(t *testing.T) {
 
 	fmt.Printf("Test: Basic leave/join ...\n")
 
-	cfa := make([]Config, 6)
+	cfa := make([]Config, 6)				// config array
 	cfa[0] = ck.Query(-1)
 
 	check(t, []int{}, ck)
@@ -307,7 +308,7 @@ func TestMulti(t *testing.T) {
 
 	fmt.Printf("Test: Concurrent multi leave/join ...\n")
 
-	const npara = 10
+	const npara = 10			// number of clerks
 	var cka [npara]*Clerk
 	for i := 0; i < len(cka); i++ {
 		cka[i] = cfg.makeClient(cfg.All())

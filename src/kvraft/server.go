@@ -85,7 +85,6 @@ func (kv *KVServer) removePrevious(requestIndex int, clientId int) {
 	for id, _ := range kv.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
-
 			delete(kv.ResultMap, id)			// remove previous result
 		}
 	}
@@ -137,7 +136,6 @@ func (kv *KVServer) applyLoop() {
 					kv.CommitIndex = 0
 					kv.CommitTerm = 0
 				}
-
 				DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			}
@@ -150,7 +148,7 @@ func (kv *KVServer) applyLoop() {
 // applyOne operation to key-value database
 func (kv *KVServer) applyOne(op Op) (result Result) {
 	result = Result{
-		OpType: "op.OpType",
+		OpType: op.OpType,
 		Value:  "",
 		Err:    "",
 		Status: Done,
@@ -203,7 +201,6 @@ func (kv *KVServer) snapshotLoop() {
 				kv.rf.SaveSnapshot(snapshot, commitIndex, commitTerm)
 				kv.mu.Lock()
 			}
-
 			//DPrintf("[KV %v]: Snapshot Done, size = %v",
 			//	kv.me, kv.persister.RaftStateSize())
 			//kv.persister.SaveStateAndSnapshot(kv.persister.ReadRaftState(), snapshot)
@@ -393,7 +390,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
 		DPrintf("[KV %v] read from persister, data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
 	}
-
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
