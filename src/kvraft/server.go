@@ -30,6 +30,7 @@ const (
 	AppendType 	OpType = "Append"
 )
 
+
 // Op
 // command that send to raft
 // describe Get/Put/Append operation
