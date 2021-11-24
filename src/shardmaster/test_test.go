@@ -92,11 +92,13 @@ func TestBasic(t *testing.T) {
 
 	check(t, []int{}, ck)
 
+	// 3 servers "x,y,z" === group1
 	var gid1 int = 1
 	ck.Join(map[int][]string{gid1: []string{"x", "y", "z"}})
 	check(t, []int{gid1}, ck)
 	cfa[1] = ck.Query(-1)
 
+	// 3 servers "a,b,c" === group2
 	var gid2 int = 2
 	ck.Join(map[int][]string{gid2: []string{"a", "b", "c"}})
 	check(t, []int{gid1, gid2}, ck)
@@ -112,10 +114,12 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("wrong servers for gid %v: %v\n", gid2, sa2)
 	}
 
+	// dismiss group1
 	ck.Leave([]int{gid1})
 	check(t, []int{gid2}, ck)
 	cfa[4] = ck.Query(-1)
 
+	// dismiss group2
 	ck.Leave([]int{gid2})
 	cfa[5] = ck.Query(-1)
 
