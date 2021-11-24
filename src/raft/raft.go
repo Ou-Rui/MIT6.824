@@ -885,6 +885,7 @@ func (rf *Raft) updateLogs(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 		}
 		// only append new entries ????
 		if sliceIndex < 0 || sliceIndex >= len(rf.logState.logs) || rf.logState.logs[sliceIndex] != entry{
+		//if sliceIndex < 0 || sliceIndex >= len(rf.logState.logs){
 			rf.logState.logs = append(rf.logState.logs, entry)
 		}
 		rf.logState.lastLogIndex = rf.logState.logs[len(rf.logState.logs)-1].Index
