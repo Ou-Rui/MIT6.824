@@ -38,11 +38,13 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Id 			string
 	OpType 		OpType // string, Get/Put/Append
+
 	Key    		string
 	Value  		string
 
-	Id 			string
+
 }
 
 type Result struct {
@@ -302,6 +304,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		Value:  		args.Value,
 		Id:     		args.Id,
 	}
+
 	kv.mu.Unlock()
 	_, term, isLeader := kv.rf.Start(op)
 	kv.mu.Lock()
@@ -432,6 +435,31 @@ func DecodeSnapshot(snapshot []byte) (
 		decoder.Decode(&CommitIndex) != nil ||
 		decoder.Decode(&CommitTerm) != nil {
 		DPrintf("Decode snapshot error...")
+	}
+	return
+}
+
+func (op *Op) encode() []byte {
+	writer := new(bytes.Buffer)
+	encoder := labgob.NewEncoder(writer)
+
+	encoder.Encode(op.Id)
+	encoder.Encode(op.OpType)
+	encoder.Encode(op.Key)
+	encoder.Encode(op.Value)
+
+	data := writer.Bytes()
+	return data
+}
+
+func (op *Op) decode(data []byte) {
+	reader := bytes.NewBuffer(data)
+	decoder := labgob.NewDecoder(reader)
+	if decoder.Decode(&op.Id) != nil ||
+		decoder.Decode(&op.OpType) != nil ||
+		decoder.Decode(&op.Key) != nil ||
+		decoder.Decode(&op.Value) != nil {
+		DPrintf("Decode Op error...")
 	}
 	return
 }
