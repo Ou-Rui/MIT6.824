@@ -126,14 +126,14 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 	}
 
 	for !sm.ResultMap[op.Id].Done {
-		DPrintf("[SM %v]: sleep..", sm.me)
+		//DPrintf("[SM %v]: sleep..", sm.me)
 		sm.resultCond.Wait()
 		sm.mu.Unlock()
 		// check Leadership and Term
 		curTerm, isLeader := sm.rf.GetState()
 		sm.mu.Lock()
-		DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
-			sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
+		//DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
+		//	sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -174,14 +174,14 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) {
 	}
 
 	for !sm.ResultMap[op.Id].Done {
-		DPrintf("[SM %v]: sleep..", sm.me)
+		//DPrintf("[SM %v]: sleep..", sm.me)
 		sm.resultCond.Wait()
 		sm.mu.Unlock()
 		// check Leadership and Term
 		curTerm, isLeader := sm.rf.GetState()
 		sm.mu.Lock()
-		DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
-			sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
+		//DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
+		//	sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -223,14 +223,14 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) {
 	}
 
 	for !sm.ResultMap[op.Id].Done {
-		DPrintf("[SM %v]: sleep..", sm.me)
+		//DPrintf("[SM %v]: sleep..", sm.me)
 		sm.resultCond.Wait()
 		sm.mu.Unlock()
 		// check Leadership and Term
 		curTerm, isLeader := sm.rf.GetState()
 		sm.mu.Lock()
-		DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
-			sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
+		//DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
+		//	sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -271,14 +271,14 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 	}
 
 	for !sm.ResultMap[op.Id].Done {
-		DPrintf("[SM %v]: sleep..", sm.me)
+		//DPrintf("[SM %v]: sleep..", sm.me)
 		sm.resultCond.Wait()
 		sm.mu.Unlock()
 		// check Leadership and Term
 		curTerm, isLeader := sm.rf.GetState()
 		sm.mu.Lock()
-		DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
-			sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
+		//DPrintf("[SM %v]: wakeup id = %v, Done = %v, curTerm = %v, isLeader = %v",
+		//	sm.me, op.Id, sm.ResultMap[op.Id].Done, curTerm, isLeader)
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -301,7 +301,7 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 func (sm *ShardMaster) removePrevious(requestIndex int, clientId int) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	DPrintf("[SM %v]: removePrevious", sm.me)
+	//DPrintf("[SM %v]: removePrevious", sm.me)
 	for id, _ := range sm.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
