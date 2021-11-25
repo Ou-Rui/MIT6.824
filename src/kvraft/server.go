@@ -43,8 +43,6 @@ type Op struct {
 
 	Key    		string
 	Value  		string
-
-
 }
 
 type Result struct {

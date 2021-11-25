@@ -149,7 +149,7 @@ func (cfg *config) deleteClient(ck *Clerk) {
 	delete(cfg.clerks, ck)
 }
 
-// Shutdown i'th server of gi'th group, by isolating it
+// ShutdownServer Shutdown i'th server of gi'th group, by isolating it
 func (cfg *config) ShutdownServer(gi int, i int) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
@@ -197,7 +197,7 @@ func (cfg *config) ShutdownGroup(gi int) {
 	}
 }
 
-// start i'th server in gi'th group
+// StartServer start i'th server in gi'th group
 func (cfg *config) StartServer(gi int, i int) {
 	cfg.mu.Lock()
 

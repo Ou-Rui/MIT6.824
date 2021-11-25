@@ -2,18 +2,54 @@ package shardkv
 
 
 // import "../shardmaster"
-import "mymr/src/labrpc"
+import (
+	"log"
+	"mymr/src/labrpc"
+	"sync/atomic"
+)
 import "mymr/src/raft"
 import "sync"
 import "mymr/src/labgob"
 
+const Debug = 1
 
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug > 0 {
+		log.Printf(format, a...)
+	}
+	return
+}
+
+type OpType string
+
+const (
+	GetType    	OpType = "Get"
+	PutType    	OpType = "Put"
+	AppendType 	OpType = "Append"
+)
 
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Id 			string
+	OpType 		OpType // string, Get/Put/Append
+
+	Key    		string
+	Value  		string
 }
+
+type Result struct {
+	OpType 		OpType
+	Value  		string
+	Err    		Err
+	Status 		string
+}
+
+const (
+	Done   = "Done"
+	Undone = "Undone"
+)
 
 type ShardKV struct {
 	mu           sync.Mutex
@@ -22,10 +58,18 @@ type ShardKV struct {
 	applyCh      chan raft.ApplyMsg
 	make_end     func(string) *labrpc.ClientEnd
 	gid          int
-	masters      []*labrpc.ClientEnd
-	maxraftstate int // snapshot if log grows this big
+	masters      []*labrpc.ClientEnd			// shardMasters, dont call their rpc directly, instead, create a shardMaster clerk
+	maxraftstate int 							// snapshot if log grows this big
 
 	// Your definitions here.
+	dead				int32
+	Data        		map[string]string	// kv data
+	ResultMap   		map[string]Result 	// key: requestId, value: result
+	resultCond  		*sync.Cond
+	CommitIndex 		int
+	CommitTerm			int
+
+	persister 			*raft.Persister
 }
 
 
@@ -44,8 +88,18 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // turn off debug output from this instance.
 //
 func (kv *ShardKV) Kill() {
+	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	// Your code here, if desired.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	DPrintf("[KV %v]: killed..", kv.me)
+	kv.resultCond.Broadcast()
+}
+
+func (kv *ShardKV) killed() bool {
+	z := atomic.LoadInt32(&kv.dead)
+	return z == 1
 }
 
 // StartServer
