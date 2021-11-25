@@ -29,7 +29,6 @@ type Config struct {
 }
 
 func (config *Config) reBalanceShards()  {
-
 	// gid(int) -> shards([]int)
 	gid2shards := make(map[int][]int)
 	gid2shards[0] = make([]int,0)				// GID = 0 ---> UnAllocated
@@ -40,6 +39,9 @@ func (config *Config) reBalanceShards()  {
 		gid2shards[gid] = append(gid2shards[gid], i)
 	}
 	groupNum := len(gid2shards)-1
+	if groupNum == 0 {
+		return
+	}
 	shardPerGroup := len(config.Shards) / groupNum
 	DPrintf("reBalance(), gid2shards = %v, groupNum = %v, shardPerGroup = %v",
 		gid2shards, groupNum, shardPerGroup)
@@ -75,7 +77,6 @@ func (config *Config) isBalanced(gid2shards map[int][]int, shardPerGroup int) bo
 }
 
 func (config *Config) moveOne(gid2shards map[int][]int) {
-	//
 	toGID := -1
 	minShard := NShards + 1
 	for gid, shards := range gid2shards {

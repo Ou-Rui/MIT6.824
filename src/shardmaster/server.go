@@ -376,7 +376,9 @@ func (sm *ShardMaster) applyOne(op Op) (result Result) {
 	case JoinType:
 		sm.applyJoin(op)
 	case LeaveType:
+		sm.applyLeave(op)
 	case MoveType:
+		sm.applyMove(op)
 	case QueryType:
 		result.Config = sm.applyQuery(op)
 	}
@@ -392,11 +394,6 @@ func (sm *ShardMaster) applyJoin(op Op) {
 		Shards: [10]int{},
 		Groups: make(map[int][]string),
 	}
-	//deepCopy(newConfig, sm.configs[len(sm.configs)-1])
-	//err := deepCopy(newConfig, sm.configs[len(sm.configs)-1])
-	//if err != nil {
-	//	DPrintf("[SM %v]: deepCopy ERROR", sm.me)
-	//}
 	//Shards
 	lastConfig := sm.configs[len(sm.configs)-1]
 	newConfig.Shards = lastConfig.Shards
@@ -410,10 +407,64 @@ func (sm *ShardMaster) applyJoin(op Op) {
 		copy(newConfig.Groups[gid], servers)
 	}
 	DPrintf("[SM %v]: Join before reBalance config = %v", sm.me, newConfig)
-
 	newConfig.reBalanceShards()
 	sm.configs = append(sm.configs, newConfig)
 	DPrintf("[SM %v]: Join Apply! sm.configs = %v", sm.me, sm.configs)
+}
+
+func (sm *ShardMaster) applyLeave(op Op) {
+	DPrintf("[SM %v]: applying Leave .. curConfig = %v", sm.me, sm.configs[len(sm.configs)-1])
+	newConfig := Config {
+		Num:    len(sm.configs),
+		Shards: [10]int{},
+		Groups: make(map[int][]string),
+	}
+	//Shards
+	lastConfig := sm.configs[len(sm.configs)-1]
+	newConfig.Shards = lastConfig.Shards
+	for i, gid := range newConfig.Shards {
+		for _, leaveGid := range op.GIDs {
+			if gid == leaveGid {
+				newConfig.Shards[i] = 0		// unallocated
+				break
+			}
+		}
+	}
+	// Groups
+	for gid, servers := range lastConfig.Groups {
+		newConfig.Groups[gid] = make([]string, len(servers))
+		copy(newConfig.Groups[gid], servers)
+	}
+	for _, gid := range op.GIDs {
+		delete(newConfig.Groups, gid)
+	}
+	DPrintf("[SM %v]: Leave before reBalance config = %v", sm.me, newConfig)
+	newConfig.reBalanceShards()
+	sm.configs = append(sm.configs, newConfig)
+	DPrintf("[SM %v]: Leave Apply! sm.configs = %v", sm.me, sm.configs)
+}
+
+func (sm *ShardMaster) applyMove(op Op) {
+	DPrintf("[SM %v]: applying Move .. curConfig = %v", sm.me, sm.configs[len(sm.configs)-1])
+	newConfig := Config {
+		Num:    len(sm.configs),
+		Shards: [10]int{},
+		Groups: make(map[int][]string),
+	}
+	//Shards
+	lastConfig := sm.configs[len(sm.configs)-1]
+	newConfig.Shards = lastConfig.Shards
+	newConfig.Shards[op.Shard] = op.GID
+	// Groups
+	for gid, servers := range lastConfig.Groups {
+		newConfig.Groups[gid] = make([]string, len(servers))
+		copy(newConfig.Groups[gid], servers)
+	}
+	// Move dont reBalance
+	//DPrintf("[SM %v]: Move before reBalance config = %v", sm.me, newConfig)
+	//newConfig.reBalanceShards()
+	sm.configs = append(sm.configs, newConfig)
+	DPrintf("[SM %v]: Move Apply! sm.configs = %v", sm.me, sm.configs)
 }
 
 func (sm *ShardMaster) applyQuery(op Op) Config {
