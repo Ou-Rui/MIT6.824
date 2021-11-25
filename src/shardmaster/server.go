@@ -290,7 +290,7 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 	result := sm.ResultMap[op.Id]
 	reply.Err = result.Err
 	reply.Config = result.Config
-	DPrintf("[SM %v]: Join request Done! id = %v, Config = %v",
+	DPrintf("[SM %v]: Query request Done! id = %v, Config = %v",
 		sm.me, op.Id, reply.Config)
 }
 
@@ -387,65 +387,41 @@ func (sm *ShardMaster) applyOne(op Op) (result Result) {
 
 func (sm *ShardMaster) applyJoin(op Op) {
 	DPrintf("[SM %v]: applying Join.. curConfig = %v", sm.me, sm.configs[len(sm.configs)-1])
-	var newConfig Config
-	err := deepCopy(newConfig, sm.configs[len(sm.configs)-1])
-	if err != nil {
-		DPrintf("[SM %v]: deepCopy ERROR", sm.me)
+	newConfig := Config{
+		Num:    len(sm.configs),
+		Shards: [10]int{},
+		Groups: make(map[int][]string),
 	}
-
+	//deepCopy(newConfig, sm.configs[len(sm.configs)-1])
+	//err := deepCopy(newConfig, sm.configs[len(sm.configs)-1])
+	//if err != nil {
+	//	DPrintf("[SM %v]: deepCopy ERROR", sm.me)
+	//}
+	//Shards
+	lastConfig := sm.configs[len(sm.configs)-1]
+	newConfig.Shards = lastConfig.Shards
+	// Groups
+	for gid, servers := range lastConfig.Groups {
+		newConfig.Groups[gid] = make([]string, len(servers))
+		copy(newConfig.Groups[gid], servers)
+	}
 	for gid, servers := range op.Servers {
-		deepCopy(newConfig.Groups[gid], servers)
+		newConfig.Groups[gid] = make([]string, len(servers))
+		copy(newConfig.Groups[gid], servers)
 	}
+	DPrintf("[SM %v]: Join before reBalance config = %v", sm.me, newConfig)
+
 	newConfig.reBalanceShards()
 	sm.configs = append(sm.configs, newConfig)
-	DPrintf("[SM %v]: Join Apply! newConfig = %v", sm.me, newConfig)
-}
-
-func (config *Config) reBalanceShards()  {
-	groupNum := len(config.Groups)
-	shardPerGroup := len(config.Shards) / groupNum
-	// gid(int) -> shards([]int)
-	gid2shards := make(map[int][]int)
-	for i, gid := range config.Shards {
-		gid2shards[gid] = append(gid2shards[gid], i)
-	}
-
-	for {
-		balanced, maxGID, minGID := config.isBalanced(gid2shards, shardPerGroup)
-		if  balanced {
-			break
-		}
-		// move the last shard in group maxGID
-		shard := gid2shards[maxGID][len(gid2shards[maxGID]) - 1]
-		gid2shards[maxGID] = gid2shards[maxGID] [ : len(gid2shards[maxGID]) - 1 ]
-		gid2shards[minGID] = append(gid2shards[maxGID], shard)
-		config.Shards[shard] = minGID
-	}
-}
-
-func (config *Config) isBalanced(gid2shards map[int][]int, shardPerGroup int) (balanced bool, maxGID int, minGID int) {
-	max, min := -1, NShards+1
-	maxGID, minGID = -1, -1
-	for gid, shards := range gid2shards {
-		if len(shards) > max {
-			 max = len(shards)
-			 maxGID = gid
-		}
-		if len(shards) < min {
-			min = len(shards)
-			minGID = gid
-		}
-	}
-	balanced = min == shardPerGroup && (max == min || max == min+1)
-	return
+	DPrintf("[SM %v]: Join Apply! sm.configs = %v", sm.me, sm.configs)
 }
 
 func (sm *ShardMaster) applyQuery(op Op) Config {
 	var config Config
 	if op.Num < 0 || op.Num >= len(sm.configs) {
-		deepCopy(config, sm.configs[len(sm.configs)-1])
+		config = sm.configs[len(sm.configs)-1]
 	}else {
-		deepCopy(config, sm.configs[op.Num])
+		config = sm.configs[op.Num]
 	}
 
 	DPrintf("[SM %v]: Query Apply! config = %v", sm.me, config)
@@ -495,6 +471,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister)
 	sm.rf = raft.Make(servers, me, persister, sm.applyCh)
 
 	// Your code here.
+	sm.me = me
 	sm.Data = make(map[string]string)
 	sm.ResultMap = make(map[string]Result)
 	sm.resultCond = sync.NewCond(&sm.mu)
