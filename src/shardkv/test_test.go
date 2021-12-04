@@ -31,9 +31,11 @@ func TestStaticShards(t *testing.T) {
 
 	ck := cfg.makeClient()
 
+	// Join two group
 	cfg.join(0)
 	cfg.join(1)
 
+	// test 10 Put/Get
 	n := 10
 	ka := make([]string, n)
 	va := make([]string, n)
