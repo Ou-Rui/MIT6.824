@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"log"
 	"mymr/src/labrpc"
+	"mymr/src/shardmaster"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -73,6 +74,30 @@ type ShardKV struct {
 	CommitTerm  int
 
 	persister *raft.Persister
+	mck       *shardmaster.Clerk // one mck communicate with all shardMasters
+	config    shardmaster.Config
+}
+
+// queryConfigLoop
+// query for latest Config by kv.mck.Query(-1) every 100ms
+func (kv *ShardKV) queryConfigLoop() {
+	for {
+		if kv.killed() {
+			return
+		}
+		config := kv.mck.Query(-1)
+		DPrintf("[KV %v]: getConfig = %v", kv.me, config)
+		if config.Num < kv.config.Num {
+			DPrintf("[KV %v]: getConfig ERROR!! queryConfigIndex = %v, curIndex = %v",
+				kv.me, config.Num, kv.config.Num)
+		} else if config.Num == kv.config.Num {
+			// do nothing
+		} else {
+			DPrintf("[KV %v]: update config! lastConfig = %v", kv.me, kv.config)
+			kv.config = config
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // removePrevious
@@ -382,7 +407,8 @@ func (kv *ShardKV) killed() bool {
 // StartServer() must return quickly, so it should start goroutines
 // for any long-running work.
 //
-func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int, gid int, masters []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *ShardKV {
+func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int,
+	gid int, masters []*labrpc.ClientEnd, make_end func(string) *labrpc.ClientEnd) *ShardKV {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
 	labgob.Register(Op{})
@@ -395,12 +421,31 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.masters = masters
 
 	// Your initialization code here.
+	kv.Data = make(map[string]string)
+	kv.ResultMap = make(map[string]Result)
+	kv.resultCond = sync.NewCond(&kv.mu)
+	kv.CommitIndex = 0
+	kv.CommitTerm = 0
+	kv.persister = persister
+
+	snapshot := persister.ReadSnapshot()
+	if len(snapshot) != 0 {
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
+		DPrintf("[KV %v] read from persister, data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
+	}
 
 	// Use something like this to talk to the shardmaster:
-	// kv.mck = shardmaster.MakeClerk(kv.masters)
+	kv.mck = shardmaster.MakeClerk(kv.masters)
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+
+	// Goroutines
+	go kv.applyLoop()
+
+	if maxraftstate > 0 {
+		go kv.snapshotLoop()
+	}
 
 	return kv
 }

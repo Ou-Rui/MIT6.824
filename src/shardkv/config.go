@@ -346,7 +346,7 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 	cfg.net = labrpc.MakeNetwork()
 	cfg.start = time.Now()
 
-	// master
+	// 3 shardMasters
 	cfg.nmasters = 3
 	cfg.masterservers = make([]*shardmaster.ShardMaster, cfg.nmasters)
 	for i := 0; i < cfg.nmasters; i++ {
@@ -354,6 +354,7 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 	}
 	cfg.mck = cfg.shardclerk()
 
+	// 3 groups, n replicas per group
 	cfg.ngroups = 3
 	cfg.groups = make([]*group, cfg.ngroups)
 	cfg.n = n

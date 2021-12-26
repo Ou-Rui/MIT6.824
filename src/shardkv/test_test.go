@@ -25,7 +25,7 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 //
 func TestStaticShards(t *testing.T) {
 	fmt.Printf("Test: static shards ...\n")
-
+	// 3 shardMasters, 3 Groups, n replicas per Group
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 
