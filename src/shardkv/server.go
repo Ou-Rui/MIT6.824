@@ -60,7 +60,7 @@ type ShardKV struct {
 	me           int
 	rf           *raft.Raft
 	applyCh      chan raft.ApplyMsg
-	make_end     func(string) *labrpc.ClientEnd
+	make_end     func(string) *labrpc.ClientEnd // make_end(serverName) ==> ClientEnd
 	gid          int
 	masters      []*labrpc.ClientEnd // shardMasters, dont call their rpc directly, instead, create a shardMaster clerk
 	maxraftstate int                 // snapshot if log grows this big
@@ -82,7 +82,9 @@ type ShardKV struct {
 // query for latest Config by kv.mck.Query(-1) every 100ms
 func (kv *ShardKV) queryConfigLoop() {
 	for {
+		kv.mu.Lock()
 		if kv.killed() {
+			kv.mu.Unlock()
 			return
 		}
 		config := kv.mck.Query(-1)
@@ -96,6 +98,7 @@ func (kv *ShardKV) queryConfigLoop() {
 			DPrintf("[KV %v-%v]: update config! lastConfig = %v", kv.gid, kv.me, kv.config)
 			kv.config = config
 		}
+		kv.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -260,6 +263,14 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v-%v]: Get request receive.. id = %v, key = %v",
 		kv.gid, kv.me, args.Id, args.Key)
+
+	if args.configIndex != kv.config.Num {
+		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
+			kv.gid, kv.me, args.configIndex, kv.config.Num)
+		reply.Err = ErrWrongGroup
+		return
+	}
+
 	if kv.ResultMap[args.Id].Status != "" {
 		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Value = kv.ResultMap[args.Id].Value
@@ -444,6 +455,8 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	if maxraftstate > 0 {
 		go kv.snapshotLoop()
 	}
+
+	go kv.queryConfigLoop()
 
 	return kv
 }

@@ -13,8 +13,7 @@ import "mymr/src/labrpc"
 import "sync"
 import "mymr/src/labgob"
 
-
-const Debug = 1
+const Debug = 0
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -26,38 +25,38 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 type OpType string
 
 const (
-	JoinType		OpType = "Join"
-	LeaveType    	OpType = "Leave"
-	MoveType 		OpType = "Move"
-	QueryType    	OpType = "Query"
+	JoinType  OpType = "Join"
+	LeaveType OpType = "Leave"
+	MoveType  OpType = "Move"
+	QueryType OpType = "Query"
 )
 
 type Op struct {
 	// Your data here.
 	// for All
-	OpType 		OpType
-	Id 			string
+	OpType OpType
+	Id     string
 	// for Get/Put/Append
-	Key    		string
-	Value  		string
+	Key   string
+	Value string
 	// for Join
-	Servers    	map[int][]string
+	Servers map[int][]string
 	// for Leave
-	GIDs 		[]int
+	GIDs []int
 	// for Move
-	Shard 		int
-	GID   		int
+	Shard int
+	GID   int
 	// for Query
-	Num 		int
+	Num int
 }
 
 type Result struct {
 	// for All
-	OpType 		OpType
-	Err    		Err
-	Done 		bool
+	OpType OpType
+	Err    Err
+	Done   bool
 	// for Get/Put/Append
-	Value  		string
+	Value string
 	// for Join
 
 	// for Leave
@@ -65,7 +64,7 @@ type Result struct {
 	// for Move
 
 	// for Query
-	Config 		Config
+	Config Config
 }
 
 const (
@@ -82,23 +81,21 @@ type ShardMaster struct {
 	applyCh chan raft.ApplyMsg
 
 	// Your data here.
-	dead    			int32 // set by Kill()
+	dead int32 // set by Kill()
 
-	maxraftstate 		int // snapshot if log grows this big
+	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	Data        		map[string]string	// kv data
-	ResultMap   		map[string]Result 	// key: requestId, value: result
-	resultCond  		*sync.Cond
-	CommitIndex 		int
-	CommitTerm			int
+	Data        map[string]string // kv data
+	ResultMap   map[string]Result // key: requestId, value: result
+	resultCond  *sync.Cond
+	CommitIndex int
+	CommitTerm  int
 
-	persister 			*raft.Persister
-
+	persister *raft.Persister
 
 	configs []Config // indexed by config num
 }
-
 
 func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 	// Your code here.
@@ -112,9 +109,9 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 		return
 	}
 	op := Op{
-		OpType: 		JoinType,
-		Id:     		args.Id,
-		Servers:   		args.Servers,
+		OpType:  JoinType,
+		Id:      args.Id,
+		Servers: args.Servers,
 	}
 	sm.mu.Unlock()
 	_, term, isLeader := sm.rf.Start(op)
@@ -137,7 +134,7 @@ func (sm *ShardMaster) Join(args *JoinArgs, reply *JoinReply) {
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
-		}else if term != curTerm{
+		} else if term != curTerm {
 			reply.Err = ErrNewTerm
 			return
 		}
@@ -160,9 +157,9 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) {
 		return
 	}
 	op := Op{
-		OpType: 		LeaveType,
-		Id:     		args.Id,
-		GIDs:   		args.GIDs,
+		OpType: LeaveType,
+		Id:     args.Id,
+		GIDs:   args.GIDs,
 	}
 	sm.mu.Unlock()
 	_, term, isLeader := sm.rf.Start(op)
@@ -185,7 +182,7 @@ func (sm *ShardMaster) Leave(args *LeaveArgs, reply *LeaveReply) {
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
-		}else if term != curTerm{
+		} else if term != curTerm {
 			reply.Err = ErrNewTerm
 			return
 		}
@@ -208,10 +205,10 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) {
 		return
 	}
 	op := Op{
-		OpType: 		MoveType,
-		Id:     		args.Id,
-		Shard:   		args.Shard,
-		GID:			args.GID,
+		OpType: MoveType,
+		Id:     args.Id,
+		Shard:  args.Shard,
+		GID:    args.GID,
 	}
 	sm.mu.Unlock()
 	_, term, isLeader := sm.rf.Start(op)
@@ -234,7 +231,7 @@ func (sm *ShardMaster) Move(args *MoveArgs, reply *MoveReply) {
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
-		}else if term != curTerm{
+		} else if term != curTerm {
 			reply.Err = ErrNewTerm
 			return
 		}
@@ -257,9 +254,9 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 		return
 	}
 	op := Op{
-		OpType: 		QueryType,
-		Id:     		args.Id,
-		Num:   			args.Num,
+		OpType: QueryType,
+		Id:     args.Id,
+		Num:    args.Num,
 	}
 	sm.mu.Unlock()
 	_, term, isLeader := sm.rf.Start(op)
@@ -282,7 +279,7 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 		if !isLeader || sm.killed() {
 			reply.Err = ErrWrongLeader
 			return
-		}else if term != curTerm{
+		} else if term != curTerm {
 			reply.Err = ErrNewTerm
 			return
 		}
@@ -294,7 +291,6 @@ func (sm *ShardMaster) Query(args *QueryArgs, reply *QueryReply) {
 		sm.me, op.Id, reply.Config)
 }
 
-
 // removePrevious
 // goroutine, called when a new request complete
 // free memory
@@ -305,7 +301,7 @@ func (sm *ShardMaster) removePrevious(requestIndex int, clientId int) {
 	for id, _ := range sm.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
-			delete(sm.ResultMap, id)			// remove previous result
+			delete(sm.ResultMap, id) // remove previous result
 		}
 	}
 }
@@ -331,26 +327,26 @@ func (sm *ShardMaster) applyLoop() {
 				sm.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 				sm.CommitTerm = applyMsg.CommandTerm
 				if !sm.ResultMap[id].Done {
-					result := sm.applyOne(op)          // apply
+					result := sm.applyOne(op) // apply
 					sm.ResultMap[id] = result
 				}
-			}else {
+			} else {
 				DPrintf("[SM %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
 					sm.me, sm.CommitIndex, applyMsg.CommandIndex)
 			}
 			_, requestIndex, clientId := parseRequestId(id)
 			go sm.removePrevious(requestIndex, clientId)
-		}else {
+		} else {
 			if applyMsg.CommandTerm == -10 {
 				DPrintf("[SM %v]: toFollower apply", sm.me)
-			}else {
+			} else {
 				// snapshot apply
 				DPrintf("[SM %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 					sm.me, sm.Data, sm.ResultMap, sm.CommitIndex, sm.CommitTerm)
 				snapshot, _ := applyMsg.Command.([]byte)
 				if len(snapshot) > 0 {
 					sm.Data, sm.ResultMap, sm.CommitIndex, sm.CommitTerm = DecodeSnapshot(snapshot)
-				}else {
+				} else {
 					sm.Data = make(map[string]string)
 					sm.ResultMap = make(map[string]Result)
 					sm.CommitIndex = 0
@@ -370,7 +366,7 @@ func (sm *ShardMaster) applyOne(op Op) (result Result) {
 	result = Result{
 		OpType: op.OpType,
 		Err:    OK,
-		Done: true,
+		Done:   true,
 	}
 	switch op.OpType {
 	case JoinType:
@@ -414,7 +410,7 @@ func (sm *ShardMaster) applyJoin(op Op) {
 
 func (sm *ShardMaster) applyLeave(op Op) {
 	DPrintf("[SM %v]: applying Leave .. curConfig = %v", sm.me, sm.configs[len(sm.configs)-1])
-	newConfig := Config {
+	newConfig := Config{
 		Num:    len(sm.configs),
 		Shards: [10]int{},
 		Groups: make(map[int][]string),
@@ -425,7 +421,7 @@ func (sm *ShardMaster) applyLeave(op Op) {
 	for i, gid := range newConfig.Shards {
 		for _, leaveGid := range op.GIDs {
 			if gid == leaveGid {
-				newConfig.Shards[i] = 0		// unallocated
+				newConfig.Shards[i] = 0 // unallocated
 				break
 			}
 		}
@@ -446,7 +442,7 @@ func (sm *ShardMaster) applyLeave(op Op) {
 
 func (sm *ShardMaster) applyMove(op Op) {
 	DPrintf("[SM %v]: applying Move .. curConfig = %v", sm.me, sm.configs[len(sm.configs)-1])
-	newConfig := Config {
+	newConfig := Config{
 		Num:    len(sm.configs),
 		Shards: [10]int{},
 		Groups: make(map[int][]string),
@@ -471,7 +467,7 @@ func (sm *ShardMaster) applyQuery(op Op) Config {
 	var config Config
 	if op.Num < 0 || op.Num >= len(sm.configs) {
 		config = sm.configs[len(sm.configs)-1]
-	}else {
+	} else {
 		config = sm.configs[op.Num]
 	}
 
@@ -545,7 +541,7 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 		clientId, _ = strconv.Atoi(t[2])
 		//DPrintf("parseRequestId succeed, id = %v, opType = %v, requestIndex = %v, clientId = %v",
 		//	id, opType, requestIndex, clientId)
-	}else {
+	} else {
 		DPrintf("parseRequestId error??? id = %v", id)
 	}
 	return

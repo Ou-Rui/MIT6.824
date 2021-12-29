@@ -91,12 +91,13 @@ func TestStaticShards(t *testing.T) {
 
 func TestJoinLeave(t *testing.T) {
 	fmt.Printf("Test: join then leave ...\n")
-
+	// 3 shardMasters, 3 Groups, n replicas per Group
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient()
-
+	// join one group(gid = 0)
+	// group 0 should be responsible for all shards
 	cfg.join(0)
 
 	n := 10
@@ -111,6 +112,8 @@ func TestJoinLeave(t *testing.T) {
 		check(t, ck, ka[i], va[i])
 	}
 
+	// join the second group(gid = 1)
+	// group 0/1 should be responsible for half shards
 	cfg.join(1)
 
 	for i := 0; i < n; i++ {
