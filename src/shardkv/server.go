@@ -264,9 +264,9 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v-%v]: Get request receive.. id = %v, key = %v",
 		kv.gid, kv.me, args.Id, args.Key)
 
-	if args.configIndex != kv.config.Num {
+	if args.ConfigIndex != kv.config.Num {
 		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
-			kv.gid, kv.me, args.configIndex, kv.config.Num)
+			kv.gid, kv.me, args.ConfigIndex, kv.config.Num)
 		reply.Err = ErrWrongGroup
 		return
 	}
@@ -323,11 +323,20 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	defer kv.mu.Unlock()
 	DPrintf("[KV %v-%v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
 		kv.gid, kv.me, args.Id, args.Op, args.Key, args.Value)
+
+	if args.ConfigIndex != kv.config.Num {
+		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
+			kv.gid, kv.me, args.ConfigIndex, kv.config.Num)
+		reply.Err = ErrWrongGroup
+		return
+	}
+
 	if kv.ResultMap[args.Id].Status != "" {
 		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Err = ErrAlreadyDone
 		return
 	}
+
 	op := Op{
 		OpType: OpType(args.Op),
 		Key:    args.Key,

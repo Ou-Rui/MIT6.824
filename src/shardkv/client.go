@@ -83,9 +83,9 @@ func (ck *Clerk) Get(key string) string {
 	args := GetArgs{}
 	args.Key = key
 	args.Id = id
-	args.configIndex = ck.config.Num
 
 	for {
+		args.ConfigIndex = ck.config.Num
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
@@ -113,6 +113,7 @@ func (ck *Clerk) Get(key string) string {
 		time.Sleep(100 * time.Millisecond)
 		// ask master for the latest configuration.
 		ck.config = ck.sm.Query(-1)
+		DPrintf("[CK]: getConfig = %v", ck.config)
 	}
 
 	return ""
@@ -132,9 +133,9 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	args.Value = value
 	args.Op = op
 	args.Id = id
-	args.configIndex = ck.config.Num
 
 	for {
+		args.ConfigIndex = ck.config.Num
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
@@ -149,7 +150,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					return
 				}
 				if ok && reply.Err == ErrWrongGroup {
-					DPrintf("[CK]: Get WrongGroup, configIndex = %v, server = %v-%v, id = %v, key = %v",
+					DPrintf("[CK]: PutAppend WrongGroup, configIndex = %v, server = %v-%v, id = %v, key = %v",
 						ck.config.Num, gid, si, id, key)
 					// sleep and query for latest config
 					break
@@ -160,6 +161,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		time.Sleep(100 * time.Millisecond)
 		// ask master for the latest configuration.
 		ck.config = ck.sm.Query(-1)
+		DPrintf("[CK]: getConfig = %v", ck.config)
 	}
 }
 
