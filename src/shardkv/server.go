@@ -86,14 +86,14 @@ func (kv *ShardKV) queryConfigLoop() {
 			return
 		}
 		config := kv.mck.Query(-1)
-		DPrintf("[KV %v]: getConfig = %v", kv.me, config)
+		DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
 		if config.Num < kv.config.Num {
-			DPrintf("[KV %v]: getConfig ERROR!! queryConfigIndex = %v, curIndex = %v",
-				kv.me, config.Num, kv.config.Num)
+			DPrintf("[KV %v-%v]: getConfig ERROR!! queryConfigIndex = %v, curIndex = %v",
+				kv.gid, kv.me, config.Num, kv.config.Num)
 		} else if config.Num == kv.config.Num {
 			// do nothing
 		} else {
-			DPrintf("[KV %v]: update config! lastConfig = %v", kv.me, kv.config)
+			DPrintf("[KV %v-%v]: update config! lastConfig = %v", kv.gid, kv.me, kv.config)
 			kv.config = config
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -106,11 +106,10 @@ func (kv *ShardKV) queryConfigLoop() {
 func (kv *ShardKV) removePrevious(requestIndex int, clientId int) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("[KV %v]: removePrevious", kv.me)
+	DPrintf("[KV %v-%v]: removePrevious", kv.gid, kv.me)
 	for id, _ := range kv.ResultMap {
 		_, tIndex, tId := parseRequestId(id)
 		if tId == clientId && tIndex < requestIndex {
-
 			delete(kv.ResultMap, id) // remove previous result
 		}
 	}
@@ -124,15 +123,14 @@ func (kv *ShardKV) applyLoop() {
 			return
 		}
 		applyMsg := <-kv.applyCh // keep watching applyCh
-		DPrintf("[KV %v]: applyMsg = %v",
-			kv.me, applyMsg)
+		DPrintf("[KV %v-%v]: applyMsg = %v", kv.gid, kv.me, applyMsg)
 		kv.mu.Lock()
 		if applyMsg.CommandValid {
 			// common log apply
 			op, _ := applyMsg.Command.(Op)
 			id := op.Id
-			DPrintf("[KV %v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-				kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
+			DPrintf("[KV %v-%v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+				kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
 			if applyMsg.CommandIndex >= kv.CommitIndex {
 				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 				kv.CommitTerm = applyMsg.CommandTerm
@@ -141,18 +139,18 @@ func (kv *ShardKV) applyLoop() {
 					kv.ResultMap[id] = result
 				}
 			} else {
-				DPrintf("[KV %v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
-					kv.me, kv.CommitIndex, applyMsg.CommandIndex)
+				DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
+					kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex)
 			}
 			_, requestIndex, clientId := parseRequestId(id)
 			go kv.removePrevious(requestIndex, clientId)
 		} else {
 			if applyMsg.CommandTerm == -10 {
-				DPrintf("[KV %v]: toFollower apply", kv.me)
+				DPrintf("[KV %v-%v]: toFollower apply", kv.gid, kv.me)
 			} else {
 				// snapshot apply
-				DPrintf("[KV %v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+				DPrintf("[KV %v-%v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 				snapshot, _ := applyMsg.Command.([]byte)
 				if len(snapshot) > 0 {
 					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
@@ -163,8 +161,8 @@ func (kv *ShardKV) applyLoop() {
 					kv.CommitTerm = 0
 				}
 
-				DPrintf("[KV %v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-					kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+				DPrintf("[KV %v-%v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			}
 		}
 		kv.mu.Unlock()
@@ -201,26 +199,26 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 		}
 		result.Err = OK
 	}
-	DPrintf("[KV %v]: applyOne, id = %v, key = %v, value = %v, newValue = %v",
-		kv.me, op.Id, op.Key, op.Value, kv.Data[op.Key])
+	DPrintf("[KV %v-%v]: applyOne, id = %v, key = %v, value = %v, newValue = %v",
+		kv.gid, kv.me, op.Id, op.Key, op.Value, kv.Data[op.Key])
 	return
 }
 
 func (kv *ShardKV) snapshotLoop() {
 	for {
 		kv.mu.Lock()
-		DPrintf("[KV %v]: snapshotLoop lock", kv.me)
+		DPrintf("[KV %v-%v]: snapshotLoop lock", kv.gid, kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
 			return
 		}
 		//kv.resultCond.Wait()
 		if kv.persister.RaftStateSize() > kv.maxraftstate {
-			DPrintf("[KV %v]: RaftStateSize is too large, Snapshot!, size = %v",
-				kv.me, kv.persister.RaftStateSize())
+			DPrintf("[KV %v-%v]: RaftStateSize is too large, Snapshot!, size = %v",
+				kv.gid, kv.me, kv.persister.RaftStateSize())
 			if kv.CommitIndex == 0 {
-				DPrintf("[KV %v]: commitIndex == 0, nothing to snapshot...",
-					kv.me)
+				DPrintf("[KV %v-%v]: commitIndex == 0, nothing to snapshot...",
+					kv.gid, kv.me)
 			} else {
 				snapshot := kv.generateSnapshot()
 				commitIndex := kv.CommitIndex
@@ -230,8 +228,8 @@ func (kv *ShardKV) snapshotLoop() {
 				kv.mu.Lock()
 			}
 
-			//DPrintf("[KV %v]: Snapshot Done, size = %v",
-			//	kv.me, kv.persister.RaftStateSize())
+			//DPrintf("[KV %v-%v]: Snapshot Done, size = %v",
+			//	kv.gid, kv.me, kv.persister.RaftStateSize())
 			//kv.persister.SaveStateAndSnapshot(kv.persister.ReadRaftState(), snapshot)
 		}
 		kv.mu.Unlock()
@@ -244,7 +242,7 @@ func (kv *ShardKV) snapshotLoop() {
 func (kv *ShardKV) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
-	DPrintf("[KV %v]: data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
+	DPrintf("[KV %v-%v]: data = %v, commitIndex = %v", kv.gid, kv.me, kv.Data, kv.CommitIndex)
 	encoder.Encode(kv.Data)
 
 	encoder.Encode(kv.ResultMap)
@@ -252,7 +250,7 @@ func (kv *ShardKV) generateSnapshot() []byte {
 	encoder.Encode(kv.CommitTerm)
 
 	data := writer.Bytes()
-	DPrintf("[KV %v]: snapshot = %v", kv.me, data)
+	DPrintf("[KV %v-%v]: snapshot = %v", kv.gid, kv.me, data)
 	return data
 }
 
@@ -260,10 +258,10 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("[KV %v]: Get request receive.. id = %v, key = %v",
-		kv.me, args.Id, args.Key)
+	DPrintf("[KV %v-%v]: Get request receive.. id = %v, key = %v",
+		kv.gid, kv.me, args.Id, args.Key)
 	if kv.ResultMap[args.Id].Status != "" {
-		DPrintf("[KV %v]: started..", kv.me)
+		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Value = kv.ResultMap[args.Id].Value
 		reply.Err = ErrAlreadyDone
 		return
@@ -284,15 +282,15 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		DPrintf("[KV %v]: sleep..", kv.me)
+		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		// check Leadership and Term
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
-		DPrintf("[KV %v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
-			kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
+		DPrintf("[KV %v-%v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
+			kv.gid, kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
 		if !isLeader || kv.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -304,18 +302,18 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	result := kv.ResultMap[op.Id]
 	reply.Err = result.Err
 	reply.Value = result.Value
-	DPrintf("[KV %v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
-		kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].Status)
+	DPrintf("[KV %v-%v]: Get request Done! id = %v, key = %v, reply = %v, status = %v",
+		kv.gid, kv.me, op.Id, args.Key, reply, kv.ResultMap[op.Id].Status)
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("[KV %v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
-		kv.me, args.Id, args.Op, args.Key, args.Value)
+	DPrintf("[KV %v-%v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
+		kv.gid, kv.me, args.Id, args.Op, args.Key, args.Value)
 	if kv.ResultMap[args.Id].Status != "" {
-		DPrintf("[KV %v]: started..", kv.me)
+		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Err = ErrAlreadyDone
 		return
 	}
@@ -336,14 +334,14 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		DPrintf("[KV %v]: sleep..", kv.me)
+		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
-		DPrintf("[KV %v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
-			kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
+		DPrintf("[KV %v-%v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
+			kv.gid, kv.me, op.Id, kv.ResultMap[op.Id].Status, curTerm, isLeader)
 		if !isLeader || kv.killed() {
 			reply.Err = ErrWrongLeader
 			return
@@ -354,8 +352,8 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 	result := kv.ResultMap[op.Id]
 	reply.Err = result.Err
-	DPrintf("[KV %v]: PutAppend request Done! id = %v, reply = %v, status = %v",
-		kv.me, op.Id, reply, kv.ResultMap[op.Id].Status)
+	DPrintf("[KV %v-%v]: PutAppend request Done! id = %v, reply = %v, status = %v",
+		kv.gid, kv.me, op.Id, reply, kv.ResultMap[op.Id].Status)
 }
 
 // Kill
@@ -370,7 +368,7 @@ func (kv *ShardKV) Kill() {
 	// Your code here, if desired.
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("[KV %v]: killed..", kv.me)
+	DPrintf("[KV %v-%v]: killed..", kv.gid, kv.me)
 	kv.resultCond.Broadcast()
 }
 
@@ -431,7 +429,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
 		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm = DecodeSnapshot(snapshot)
-		DPrintf("[KV %v] read from persister, data = %v, commitIndex = %v", kv.me, kv.Data, kv.CommitIndex)
+		DPrintf("[KV %v-%v] read from persister, data = %v, commitIndex = %v", kv.gid, kv.me, kv.Data, kv.CommitIndex)
 	}
 
 	// Use something like this to talk to the shardmaster:

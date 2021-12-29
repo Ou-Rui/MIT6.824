@@ -29,7 +29,8 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Id string
+	Id          string
+	configIndex int // for server to check the belonging of key
 }
 
 type PutAppendReply struct {
@@ -39,7 +40,8 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
-	Id string
+	Id          string
+	configIndex int // for server to check the belonging of key
 }
 
 type GetReply struct {
