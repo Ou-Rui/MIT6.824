@@ -56,7 +56,8 @@ const (
 )
 
 type ShardState struct {
-	configs    []shardmaster.Config
+	configs    map[int]*shardmaster.Config
+	index      int
 	ready      bool
 	readyShard []bool // index: shard
 	onCharge   []int  // index: shard, value: configIndex
@@ -86,7 +87,7 @@ type ShardKV struct {
 }
 
 func (kv *ShardKV) containsConfig() bool {
-	return len(kv.shardState.configs) > 0
+	return kv.shardState.index >= 0
 }
 
 // queryConfigLoop
@@ -99,24 +100,22 @@ func (kv *ShardKV) queryConfigLoop() {
 			return
 		}
 		config := kv.mck.Query(-1)
-		if kv.containsConfig() {
-			lastConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
-			if config.Num < lastConfig.Num {
-				DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
-				DPrintf("[KV %v-%v]: getConfig ERROR!! queryConfigIndex = %v, curIndex = %v",
-					kv.gid, kv.me, config.Num, lastConfig.Num)
-			} else if config.Num == lastConfig.Num {
-				// do nothing
-			} else {
-				DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
-				DPrintf("[KV %v-%v]: update config! lastConfig = %v", kv.gid, kv.me, lastConfig)
-				kv.shardState.configs = append(kv.shardState.configs, config)
+		if config.Num < kv.shardState.index {
+			DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
+			DPrintf("[KV %v-%v]: out-of-date.. queryConfigIndex = %v, curIndex = %v",
+				kv.gid, kv.me, config.Num, kv.shardState.index)
+			if kv.shardState.configs[config.Num] != nil {
+				kv.shardState.configs[config.Num] = &config
+				DPrintf("[KV %v-%v]: cache.., config = %v",
+					kv.gid, kv.me, kv.shardState.configs)
 			}
+		} else if config.Num == kv.shardState.index {
+			// common situation, do nothing
 		} else {
-			DPrintf("[KV %v-%v]: getFirstConfig = %v", kv.gid, kv.me, config)
-			kv.shardState.configs = append(kv.shardState.configs, config)
+			DPrintf("[KV %v-%v]: getConfig = %v, up-to-date!", kv.gid, kv.me, config)
+			kv.shardState.configs[config.Num] = &config
+			kv.shardState.index = config.Num
 		}
-
 		kv.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -127,16 +126,13 @@ func (kv *ShardKV) queryConfigLoop() {
 func (kv *ShardKV) shardRequestLoop(configIndex int) {
 	for {
 		kv.mu.Lock()
-		if !kv.containsConfig() {
-			return
-		}
-		curConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
-		if kv.killed() || curConfig.Num > configIndex {
+		if kv.killed() || kv.shardState.index != configIndex {
 			DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
-				kv.gid, kv.me, curConfig.Num, configIndex)
+				kv.gid, kv.me, kv.shardState.index, configIndex)
 			kv.mu.Unlock()
 			return
 		}
+
 	}
 }
 
@@ -210,7 +206,6 @@ func (kv *ShardKV) applyLoop() {
 					kv.CommitIndex = 0
 					kv.CommitTerm = 0
 				}
-
 				DPrintf("[KV %v-%v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
 					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 			}
@@ -277,7 +272,6 @@ func (kv *ShardKV) snapshotLoop() {
 				kv.rf.SaveSnapshot(snapshot, commitIndex, commitTerm)
 				kv.mu.Lock()
 			}
-
 			//DPrintf("[KV %v-%v]: Snapshot Done, size = %v",
 			//	kv.gid, kv.me, kv.persister.RaftStateSize())
 			//kv.persister.SaveStateAndSnapshot(kv.persister.ReadRaftState(), snapshot)
@@ -311,14 +305,14 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v-%v]: Get request receive.. id = %v, key = %v",
 		kv.gid, kv.me, args.Id, args.Key)
 
-	if !kv.containsConfig() {
-		DPrintf("[KV %v-%v]: no config yet.. wait..", kv.gid, kv.me)
-		return
-	}
-	curConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
-	if args.ConfigIndex != curConfig.Num {
+	//if !kv.containsConfig() {
+	//	DPrintf("[KV %v-%v]: no config yet.. wait..", kv.gid, kv.me)
+	//	return
+	//}
+	//curConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
+	if args.ConfigIndex != kv.shardState.index {
 		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
-			kv.gid, kv.me, args.ConfigIndex, curConfig.Num)
+			kv.gid, kv.me, args.ConfigIndex, kv.shardState.index)
 		reply.Err = ErrWrongGroup
 		return
 	}
@@ -376,15 +370,14 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	DPrintf("[KV %v-%v]: PutAppend request receive.. id = %v, type = %v, key = %v, value = %v",
 		kv.gid, kv.me, args.Id, args.Op, args.Key, args.Value)
 
-	if !kv.containsConfig() {
-		DPrintf("[KV %v-%v]: no config yet.. wait..", kv.gid, kv.me)
-		return
-	}
-
-	curConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
-	if args.ConfigIndex != curConfig.Num {
+	//if !kv.containsConfig() {
+	//	DPrintf("[KV %v-%v]: no config yet.. wait..", kv.gid, kv.me)
+	//	return
+	//}
+	//curConfig := kv.shardState.configs[len(kv.shardState.configs)-1]
+	if args.ConfigIndex != kv.shardState.index {
 		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
-			kv.gid, kv.me, args.ConfigIndex, curConfig.Num)
+			kv.gid, kv.me, args.ConfigIndex, kv.shardState.index)
 		reply.Err = ErrWrongGroup
 		return
 	}
@@ -516,18 +509,16 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.shardState = ShardState{
-		configs:    make([]shardmaster.Config, 0),
+		configs:    make(map[int]*shardmaster.Config),
 		ready:      false,
 		readyShard: make([]bool, shardmaster.NShards),
 		onCharge:   make([]int, shardmaster.NShards),
 	}
 	// Goroutines
 	go kv.applyLoop()
-
 	if maxraftstate > 0 {
 		go kv.snapshotLoop()
 	}
-
 	go kv.queryConfigLoop()
 
 	return kv
