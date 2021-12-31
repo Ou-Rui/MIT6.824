@@ -48,3 +48,29 @@ type GetReply struct {
 	Err   Err
 	Value string
 }
+
+type ShardArgs struct {
+	Shard       int // Shard Index
+	Term        int
+	ConfigIndex int
+}
+
+type ShardReply struct {
+	Term        int
+	ConfigIndex int
+	Data        map[string]string
+	ResultMap   map[string]Result
+	Err         Err
+}
+
+//type CommitArgs struct {
+//	Shard       int
+//	Term        int
+//	ConfigIndex int
+//}
+//
+//type CommitReply struct {
+//	Term        int
+//	ConfigIndex int
+//	Err         Err
+//}
