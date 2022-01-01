@@ -105,6 +105,10 @@ func (ck *Clerk) Get(key string) string {
 						ck.config.Num, gid, si, id, key)
 					// sleep and query for latest config
 					break
+				} else if ok && reply.Err == ErrNotReady {
+					DPrintf("[CK]: Get NotReady, configIndex = %v, server = %v-%v, id = %v, key = %v",
+						ck.config.Num, gid, si, id, key)
+					break
 				}
 				// ... not ok, or ErrWrongLeader, try other servers
 
@@ -153,6 +157,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 					DPrintf("[CK]: PutAppend WrongGroup, configIndex = %v, server = %v-%v, id = %v, key = %v",
 						ck.config.Num, gid, si, id, key)
 					// sleep and query for latest config
+					break
+				} else if ok && reply.Err == ErrNotReady {
+					DPrintf("[CK]: PutAppend NotReady, configIndex = %v, server = %v-%v, id = %v, key = %v",
+						ck.config.Num, gid, si, id, key)
 					break
 				}
 				// ... not ok, or ErrWrongLeader
