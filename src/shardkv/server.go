@@ -103,15 +103,26 @@ func (kv *ShardKV) containsConfig() bool {
 func (kv *ShardKV) queryConfigLoop() {
 	for {
 		kv.mu.Lock()
+		DPrintf("[KV %v-%v]: query lock", kv.gid, kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
+			DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
 			return
 		}
 		// must first get config1
 		if !kv.containsConfig() {
 			DPrintf("[KV %v-%v]: query for first config...",
 				kv.gid, kv.me)
+
+			kv.mu.Unlock()
 			config := kv.mck.Query(1)
+			kv.mu.Lock()
+			if kv.killed() {
+				kv.mu.Unlock()
+				DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
+				return
+			}
+
 			DPrintf("[KV %v-%v]: first config = %v ?...",
 				kv.gid, kv.me, config)
 			if len(config.Groups) > 0 {
@@ -120,10 +131,20 @@ func (kv *ShardKV) queryConfigLoop() {
 				kv.newConfigHandler(config)
 			}
 			kv.mu.Unlock()
+			DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
 			time.Sleep(20 * time.Millisecond)
 			continue
 		}
+
+		kv.mu.Unlock()
 		config := kv.mck.Query(-1)
+		kv.mu.Lock()
+		if kv.killed() {
+			kv.mu.Unlock()
+			DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
+			return
+		}
+
 		if config.Num < kv.ss.ci {
 			DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
 			DPrintf("[KV %v-%v]: out-of-date.. queryConfigIndex = %v, curIndex = %v",
@@ -142,6 +163,7 @@ func (kv *ShardKV) queryConfigLoop() {
 			kv.newConfigHandler(config)
 		}
 		kv.mu.Unlock()
+		DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -442,7 +464,9 @@ func (kv *ShardKV) applyLoop() {
 			}
 		}
 		kv.mu.Unlock()
+		//DPrintf("[KV %v-%v]: applyLoop unlock", kv.gid, kv.me)
 		kv.resultCond.Broadcast()
+		//DPrintf("[KV %v-%v]: applyLoop broadcast", kv.gid, kv.me)
 	}
 }
 
@@ -581,6 +605,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	for kv.ResultMap[op.Id].Status != Done {
 		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
+		DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
 		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
@@ -632,7 +657,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	if kv.ResultMap[args.Id].Status != "" {
+	if kv.ResultMap[args.Id].Status == Done {
 		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Err = ErrAlreadyDone
 		return
@@ -658,6 +683,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	for kv.ResultMap[op.Id].Status != Done {
 		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
+		DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
 		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
@@ -691,6 +717,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // turn off debug output from this instance.
 //
 func (kv *ShardKV) Kill() {
+	DPrintf("[KV %v-%v]: killed1..", kv.gid, kv.me)
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	// Your code here, if desired.
