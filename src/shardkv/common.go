@@ -49,6 +49,8 @@ const (
 	ErrWrongConfigIndex = "ErrWrongConfigIndex"
 	ErrWrongOwner       = "ErrWrongOwner"
 	ErrKilled           = "ErrKilled"
+	ErrContinue         = "ErrContinue"
+	ErrExit             = "ErrExit"
 )
 
 type Err string
@@ -124,13 +126,14 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 }
 
 func DecodeSnapshot(snapshot []byte) (
-	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int) {
+	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int, OnCharge []int) {
 	reader := bytes.NewBuffer(snapshot)
 	decoder := labgob.NewDecoder(reader)
 	if decoder.Decode(&Data) != nil ||
 		decoder.Decode(&ResultMap) != nil ||
 		decoder.Decode(&CommitIndex) != nil ||
-		decoder.Decode(&CommitTerm) != nil {
+		decoder.Decode(&CommitTerm) != nil ||
+		decoder.Decode(&OnCharge) != nil {
 		DPrintf("Decode snapshot error...")
 	}
 	return
