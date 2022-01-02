@@ -229,12 +229,22 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 				for queryIndex > 0 {
 					// if not cached, query..
 					if kv.ss.configs[queryIndex] == nil {
+
+						kv.mu.Unlock()
 						config := kv.mck.Query(queryIndex)
+						kv.mu.Lock()
+						if kv.killed() || kv.ss.ci != configIndex {
+							DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
+								kv.gid, kv.me, kv.ss.ci, configIndex)
+							kv.mu.Unlock()
+							return
+						}
+
 						DPrintf("[KV %v-%v]: query for config%v, config = %v",
 							kv.gid, kv.me, queryIndex, config)
 						kv.ss.configs[queryIndex] = &config
 					}
-					err := kv.sendSRHandler(queryIndex, shard, configIndex)
+					err := kv.sendSRHandler(&queryIndex, shard, configIndex)
 					if err == OK {
 						DPrintf("[KV %v-%v]: shardRequestLoop for config%v return OK!, queryIndex = %v",
 							kv.gid, kv.me, configIndex, queryIndex)
@@ -257,15 +267,17 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 	}
 }
 
-func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
-	config := kv.ss.configs[queryIndex]
+// sendSRHandler
+// send ShardRequest to all servers who may be responsible for the shard at queryIndex
+func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
+	config := kv.ss.configs[*queryIndex]
 	gid := config.Shards[shard]
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
 		kv.gid, kv.me, queryIndex, gid, shard, config)
 	// server loop
 	for _, server := range servers {
-		ok, reply := kv.sendShardRequest(server, shard, queryIndex)
+		ok, reply := kv.sendShardRequest(server, shard, *queryIndex)
 		if ok {
 			// receive shardRequest reply, check alive && configIndex
 			if kv.killed() || kv.ss.ci != curCi {
@@ -299,6 +311,9 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 					kv.gid, kv.me, shard, reply.Err, reply.ConfigIndex, kv.ss.ci)
 				if reply.ConfigIndex > kv.ss.ci {
 					return ErrExit
+				} else {
+					*queryIndex++ // retry the same queryIndex later
+					break
 				}
 			} else if reply.Err == ErrWrongOwner {
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v, break ",
