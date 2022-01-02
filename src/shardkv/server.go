@@ -33,6 +33,7 @@ type Result struct {
 const (
 	Done   = "Done"
 	Undone = "Undone"
+	Redo   = "Redo"
 )
 
 type ShardState struct {
@@ -410,7 +411,7 @@ func (kv *ShardKV) applyLoop() {
 			if applyMsg.CommandIndex >= kv.CommitIndex {
 				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
 				kv.CommitTerm = applyMsg.CommandTerm
-				if kv.ResultMap[id].Status == "" && op.ConfigIndex == kv.ss.ci {
+				if kv.ResultMap[id].Status == "" || kv.ResultMap[id].Status == Redo {
 					result := kv.applyOne(op) // apply
 					kv.ResultMap[id] = result
 				}
@@ -453,6 +454,12 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 		Value:  "",
 		Err:    "",
 		Status: Done,
+	}
+	if op.ConfigIndex != kv.ss.ci {
+		result.Status = Redo
+		DPrintf("[KV %v-%v]: applyOne, ci error, op.ci = %v, kv.ci = %v",
+			kv.gid, kv.me, op.ConfigIndex, kv.ss.ci)
+		return
 	}
 	if op.OpType == GetType {
 		value, ok := kv.Data[op.Key]
@@ -538,11 +545,6 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	DPrintf("[KV %v-%v]: Get request receive.. id = %v, key = %v",
 		kv.gid, kv.me, args.Id, args.Key)
 
-	//if !kv.containsConfig() {
-	//	DPrintf("[KV %v-%v]: no config yet.. wait..", kv.gid, kv.me)
-	//	return
-	//}
-	//curConfig := kv.ss.configs[len(kv.ss.configs)-1]
 	if args.ConfigIndex != kv.ss.ci {
 		DPrintf("[KV %v-%v]: WrongGroup, args.ci = %v, kv.ci = %v",
 			kv.gid, kv.me, args.ConfigIndex, kv.ss.ci)
@@ -554,7 +556,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	if kv.ResultMap[args.Id].Status != "" {
+	if kv.ResultMap[args.Id].Status == Done {
 		DPrintf("[KV %v-%v]: started..", kv.gid, kv.me)
 		reply.Value = kv.ResultMap[args.Id].Value
 		reply.Err = ErrAlreadyDone
@@ -565,7 +567,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		Key:         args.Key,
 		Value:       "",
 		Id:          args.Id,
-		ConfigIndex: kv.ss.ci,
+		ConfigIndex: args.ConfigIndex,
 	}
 	kv.mu.Unlock()
 	_, term, isLeader := kv.rf.Start(op)
@@ -579,6 +581,12 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	for kv.ResultMap[op.Id].Status != Done {
 		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
+		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+			reply.Err = ErrWrongGroup
+			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+			return
+		}
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		// check Leadership and Term
@@ -650,6 +658,12 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	for kv.ResultMap[op.Id].Status != Done {
 		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
+		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+			reply.Err = ErrWrongGroup
+			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+			return
+		}
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
