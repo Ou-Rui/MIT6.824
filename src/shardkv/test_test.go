@@ -96,6 +96,7 @@ func TestJoinLeave(t *testing.T) {
 	defer cfg.cleanup()
 
 	ck := cfg.makeClient()
+	// config 1
 	// join one group(gid = 0)
 	// group 0 should be responsible for all shards
 	cfg.join(0)
@@ -108,10 +109,12 @@ func TestJoinLeave(t *testing.T) {
 		va[i] = randstring(5)
 		ck.Put(ka[i], va[i])
 	}
+	DPrintf("[Tester]: TestJoinLeave, put 1 OK")
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
-
+	DPrintf("[Tester]: TestJoinLeave, get 2 OK")
+	// config 2
 	// join the second group(gid = 1)
 	// group 0/1 should be responsible for half shards
 	cfg.join(1)
@@ -122,7 +125,10 @@ func TestJoinLeave(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	DPrintf("[Tester]: TestJoinLeave, get & append 3 OK")
 
+	// config 3
+	// now group 1 is responsible for all shards
 	cfg.leave(0)
 
 	for i := 0; i < n; i++ {
@@ -131,6 +137,7 @@ func TestJoinLeave(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	DPrintf("[Tester]: TestJoinLeave, get & append round 4 OK")
 
 	// allow time for shards to transfer.
 	time.Sleep(1 * time.Second)

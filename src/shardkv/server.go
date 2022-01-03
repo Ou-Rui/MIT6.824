@@ -34,6 +34,7 @@ const (
 	Done   = "Done"
 	Undone = "Undone"
 	Redo   = "Redo"
+	None   = "None"
 )
 
 type ShardState struct {
@@ -164,6 +165,7 @@ func (kv *ShardKV) queryConfigLoop() {
 		}
 		kv.mu.Unlock()
 		DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
+		kv.resultCond.Broadcast()
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -270,11 +272,17 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 // sendSRHandler
 // send ShardRequest to all servers who may be responsible for the shard at queryIndex
 func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
+	// queryIndex redo flag
+	// redo: network fail or his ci is smaller
+	redo := false
+	// network or wrong leader fail count
+	nwOrWlFailCnt := 0
+
 	config := kv.ss.configs[*queryIndex]
 	gid := config.Shards[shard]
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
-		kv.gid, kv.me, queryIndex, gid, shard, config)
+		kv.gid, kv.me, *queryIndex, gid, shard, config)
 	// server loop
 	for _, server := range servers {
 		ok, reply := kv.sendShardRequest(server, shard, *queryIndex)
@@ -304,15 +312,17 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 				} else {
 					break
 				}
-			} else if reply.Err == ErrKilled || reply.Err == ErrWrongLeader {
+			} else if reply.Err == ErrKilled {
 				// ask next server, nothing to do..
+			} else if reply.Err == ErrWrongLeader {
+				nwOrWlFailCnt++
 			} else if reply.Err == ErrWrongConfigIndex {
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v, reply.ci = %v, kv.ci = %v ",
 					kv.gid, kv.me, shard, reply.Err, reply.ConfigIndex, kv.ss.ci)
 				if reply.ConfigIndex > kv.ss.ci {
 					return ErrExit
 				} else {
-					*queryIndex++ // retry the same queryIndex later
+					redo = true
 					break
 				}
 			} else if reply.Err == ErrWrongOwner {
@@ -321,9 +331,19 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 				break
 			}
 		} else {
-			// network failed, nothing to do..
+			// network failed
+			nwOrWlFailCnt++
 		}
 	}
+	if nwOrWlFailCnt == len(servers) {
+		redo = true
+	}
+	if redo {
+		DPrintf("[KV %v-%v]: redo queryIndex = %v, nwOrWlFailCnt = %v",
+			kv.gid, kv.me, queryIndex, nwOrWlFailCnt)
+		*queryIndex++ // retry the same queryIndex later
+	}
+
 	return ErrContinue
 }
 
@@ -601,6 +621,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		reply.Err = ErrAlreadyDone
 		return
 	}
+
 	op := Op{
 		OpType:      GetType,
 		Key:         args.Key,
@@ -618,18 +639,19 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
-		DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
 		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
 				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+			delete(kv.ResultMap, op.Id)
 			return
 		}
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
-		// check Leadership and Term
+		// check Leadership and Term+
 		curTerm, isLeader := kv.rf.GetState()
 		kv.mu.Lock()
 		DPrintf("[KV %v-%v]: wakeup id = %v, status = %v, curTerm = %v, isLeader = %v",
@@ -696,13 +718,14 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	for kv.ResultMap[op.Id].Status != Done {
-		DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
-		DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
 		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
 				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+			delete(kv.ResultMap, op.Id)
 			return
 		}
 		kv.mu.Unlock()
