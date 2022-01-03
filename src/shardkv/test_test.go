@@ -160,8 +160,8 @@ func TestSnapshot(t *testing.T) {
 
 	ck := cfg.makeClient()
 
-	cfg.join(0)
-
+	cfg.join(0) // config 1
+	DPrintf("[Tester]: TestSnapshot, join 0 OK")
 	n := 30
 	ka := make([]string, n)
 	va := make([]string, n)
@@ -170,37 +170,39 @@ func TestSnapshot(t *testing.T) {
 		va[i] = randstring(20)
 		ck.Put(ka[i], va[i])
 	}
+	DPrintf("[Tester]: TestSnapshot, put round 1 OK")
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
+	DPrintf("[Tester]: TestSnapshot, get round 2 OK")
 
 	cfg.join(1)
 	cfg.join(2)
-	cfg.leave(0)
-
+	cfg.leave(0) // config 4
+	DPrintf("[Tester]: TestSnapshot, join 1+2, leave 0 OK")
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 		x := randstring(20)
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
-
+	DPrintf("[Tester]: TestSnapshot, get & append round 3 OK")
 	cfg.leave(1)
-	cfg.join(0)
-
+	cfg.join(0) // config 6
+	DPrintf("[Tester]: TestSnapshot, join 0, leave 1 OK")
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 		x := randstring(20)
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
-
+	DPrintf("[Tester]: TestSnapshot, get & append round 4 OK")
 	time.Sleep(1 * time.Second)
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
-
+	DPrintf("[Tester]: TestSnapshot, get round 5 OK")
 	time.Sleep(1 * time.Second)
 
 	cfg.checklogs()
@@ -212,11 +214,12 @@ func TestSnapshot(t *testing.T) {
 	cfg.StartGroup(0)
 	cfg.StartGroup(1)
 	cfg.StartGroup(2)
+	DPrintf("[Tester]: TestSnapshot, restart all")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
-
+	DPrintf("[Tester]: TestSnapshot, get round 6 OK")
 	fmt.Printf("  ... Passed\n")
 }
 

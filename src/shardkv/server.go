@@ -76,6 +76,8 @@ func (kv *ShardKV) readOnCharge() {
 		if kv.ss.configs[ci].Shards[shard] == kv.gid && kv.ss.OnCharge[shard] >= ci {
 			// responsible && OnCharge ==> shard ready
 			kv.ss.readyShard[shard] = true
+		} else {
+			kv.ss.readyShard[shard] = false
 		}
 	}
 	kv.ss.ready = kv.isReady()
@@ -104,10 +106,10 @@ func (kv *ShardKV) containsConfig() bool {
 func (kv *ShardKV) queryConfigLoop() {
 	for {
 		kv.mu.Lock()
-		DPrintf("[KV %v-%v]: query lock", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: query lock", kv.gid, kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
-			DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
+			//DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
 			return
 		}
 		// must first get config1
@@ -132,7 +134,7 @@ func (kv *ShardKV) queryConfigLoop() {
 				kv.newConfigHandler(config)
 			}
 			kv.mu.Unlock()
-			DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
+			//DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
 			time.Sleep(20 * time.Millisecond)
 			continue
 		}
@@ -142,7 +144,7 @@ func (kv *ShardKV) queryConfigLoop() {
 		kv.mu.Lock()
 		if kv.killed() {
 			kv.mu.Unlock()
-			DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
+			//DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
 			return
 		}
 
@@ -164,7 +166,7 @@ func (kv *ShardKV) queryConfigLoop() {
 			kv.newConfigHandler(config)
 		}
 		kv.mu.Unlock()
-		DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
 		kv.resultCond.Broadcast()
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -229,9 +231,8 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 				queryIndex := configIndex - 1
 				// queryIndex loop
 				for queryIndex > 0 {
-					// if not cached, query..
+					// if not cached the config, query..
 					if kv.ss.configs[queryIndex] == nil {
-
 						kv.mu.Unlock()
 						config := kv.mck.Query(queryIndex)
 						kv.mu.Lock()
@@ -248,10 +249,18 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 					}
 					err := kv.sendSRHandler(&queryIndex, shard, configIndex)
 					if err == OK {
-						DPrintf("[KV %v-%v]: shardRequestLoop for config%v return OK!, queryIndex = %v",
-							kv.gid, kv.me, configIndex, queryIndex)
-						kv.mu.Unlock()
-						return
+						DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v,",
+							kv.gid, kv.me, shard, configIndex, queryIndex)
+						if kv.ss.ready {
+							DPrintf("[KV %v-%v]: shardRequestLoop for config%v complete!!",
+								kv.gid, kv.me, configIndex)
+							kv.mu.Unlock()
+							return
+						} else {
+							DPrintf("[KV %v-%v]: shardRequestLoop next shard",
+								kv.gid, kv.me)
+							break
+						}
 					} else if err == ErrExit {
 						DPrintf("[KV %v-%v]: shardRequestLoop for config%v exit(-1)..",
 							kv.gid, kv.me, configIndex)
@@ -283,6 +292,14 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
 		kv.gid, kv.me, *queryIndex, gid, shard, config)
+	if gid == kv.gid && kv.ss.OnCharge[shard] >= *queryIndex {
+		kv.ss.OnCharge[shard] = kv.ss.ci
+		kv.ss.readyShard[shard] = true
+		kv.ss.ready = kv.isReady()
+		DPrintf("[KV %v-%v]: getShard %v from myself, ready = %v, readyShard = %v, OnCharge = %v",
+			kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+		return OK
+	}
 	// server loop
 	for _, server := range servers {
 		ok, reply := kv.sendShardRequest(server, shard, *queryIndex)
@@ -307,11 +324,7 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 				kv.ss.ready = kv.isReady()
 				DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
 					kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
-				if kv.ss.ready {
-					return OK
-				} else {
-					break
-				}
+				return OK
 			} else if reply.Err == ErrKilled {
 				// ask next server, nothing to do..
 			} else if reply.Err == ErrWrongLeader {
@@ -340,8 +353,11 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 	}
 	if redo {
 		DPrintf("[KV %v-%v]: redo queryIndex = %v, nwOrWlFailCnt = %v",
-			kv.gid, kv.me, queryIndex, nwOrWlFailCnt)
+			kv.gid, kv.me, *queryIndex, nwOrWlFailCnt)
 		*queryIndex++ // retry the same queryIndex later
+		kv.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		kv.mu.Lock()
 	}
 
 	return ErrContinue
@@ -549,7 +565,7 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 func (kv *ShardKV) snapshotLoop() {
 	for {
 		kv.mu.Lock()
-		DPrintf("[KV %v-%v]: snapshotLoop lock", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: snapshotLoop lock", kv.gid, kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
 			return
@@ -755,7 +771,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 // turn off debug output from this instance.
 //
 func (kv *ShardKV) Kill() {
-	DPrintf("[KV %v-%v]: killed1..", kv.gid, kv.me)
+	//DPrintf("[KV %v-%v]: killed1..", kv.gid, kv.me)
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
 	// Your code here, if desired.

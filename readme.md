@@ -22,10 +22,14 @@ PASS: TestStaticShards
   - sendSRHandler(), 把对给定queryIndex和shard的请求提取成方法
 
 ### 2022.1.3
-PASS 1000 TestJoinLeave
+PASS 1000 TestJoinLeave  
+DEBUG TestSnapshot
 - ***杀虫***
   - 将resultCond的唤醒添加到queryLoop中，避免了尴尬时点的睡死
   - redo打回后删除resultMap中的记录，否则永远都会被打回。。
+  - 请求shard如果请求到自己，说明自己负责过，可以下一个
+  - 得到shard后的处理逻辑不对，改为：如果ready结束，如果unready
+    请求下一个shard
 - **ShardRequest**
   - sendSRHandler()中，更正了需要redo当前queryIndex的判据
     - 目标server的ci较小，说明他们还没更新到同一个config，
