@@ -182,7 +182,7 @@ func (kv *ShardKV) newConfigHandler(config shardmaster.Config) {
 			if config.Shards[i] == kv.gid {
 				// responsible
 				kv.ss.readyShard[i] = true
-				kv.ss.OnCharge[i] = kv.ss.ci
+				kv.ss.OnCharge[i] = maxInt(kv.ss.OnCharge[i], kv.ss.ci)
 			} else {
 				kv.ss.readyShard[i] = false
 			}
@@ -292,13 +292,18 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
 		kv.gid, kv.me, *queryIndex, gid, shard, config)
-	if gid == kv.gid && kv.ss.OnCharge[shard] >= *queryIndex {
-		kv.ss.OnCharge[shard] = kv.ss.ci
-		kv.ss.readyShard[shard] = true
-		kv.ss.ready = kv.isReady()
-		DPrintf("[KV %v-%v]: getShard %v from myself, ready = %v, readyShard = %v, OnCharge = %v",
-			kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
-		return OK
+	if gid == kv.gid {
+		if kv.ss.OnCharge[shard] >= *queryIndex {
+			kv.ss.OnCharge[shard] = kv.ss.ci
+			kv.ss.readyShard[shard] = true
+			kv.ss.ready = kv.isReady()
+			DPrintf("[KV %v-%v]: getShard %v from myself, ready = %v, readyShard = %v, OnCharge = %v",
+				kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+			return OK
+		} else {
+			return ErrContinue
+		}
+
 	}
 	// server loop
 	for _, server := range servers {
@@ -473,8 +478,17 @@ func (kv *ShardKV) applyLoop() {
 			return
 		}
 		applyMsg := <-kv.applyCh // keep watching applyCh
-		DPrintf("[KV %v-%v]: applyMsg = %v", kv.gid, kv.me, applyMsg)
+		DPrintf("[KV %v-%v]: applyMsg = %v, wait for ready", kv.gid, kv.me, applyMsg)
 		kv.mu.Lock()
+		for !kv.ss.ready {
+			kv.mu.Unlock()
+			if kv.killed() {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+			kv.mu.Lock()
+		}
+		DPrintf("[KV %v-%v]: applyMsg = %v, ready!", kv.gid, kv.me, applyMsg)
 		if applyMsg.CommandValid {
 			// common log apply
 			op, _ := applyMsg.Command.(Op)
@@ -530,12 +544,12 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 		Err:    "",
 		Status: Done,
 	}
-	if op.ConfigIndex != kv.ss.ci {
-		result.Status = Redo
-		DPrintf("[KV %v-%v]: applyOne, ci error, op.ci = %v, kv.ci = %v",
-			kv.gid, kv.me, op.ConfigIndex, kv.ss.ci)
-		return
-	}
+	//if op.ConfigIndex != kv.ss.ci {
+	//	result.Status = Redo
+	//	DPrintf("[KV %v-%v]: applyOne, ci error, op.ci = %v, kv.ci = %v",
+	//		kv.gid, kv.me, op.ConfigIndex, kv.ss.ci)
+	//	return
+	//}
 	if op.OpType == GetType {
 		value, ok := kv.Data[op.Key]
 		if ok {
@@ -658,11 +672,18 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		//DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
 		//DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
-		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+		//if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+		//	reply.Err = ErrWrongGroup
+		//	DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+		//		kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+		//	delete(kv.ResultMap, op.Id)
+		//	return
+		//}
+		if op.ConfigIndex != kv.ss.ci {
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
 				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
-			delete(kv.ResultMap, op.Id)
+			//delete(kv.ResultMap, op.Id)
 			return
 		}
 		kv.mu.Unlock()
@@ -737,11 +758,18 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		//DPrintf("[KV %v-%v]: sleep..", kv.gid, kv.me)
 		kv.resultCond.Wait()
 		//DPrintf("[KV %v-%v]: wakeup..", kv.gid, kv.me)
-		if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+		//if kv.ResultMap[op.Id].Status == Redo { // imply that ci has changed, wrong group
+		//	reply.Err = ErrWrongGroup
+		//	DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+		//		kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+		//	delete(kv.ResultMap, op.Id)
+		//	return
+		//}
+		if op.ConfigIndex != kv.ss.ci {
 			reply.Err = ErrWrongGroup
 			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
 				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
-			delete(kv.ResultMap, op.Id)
+			//delete(kv.ResultMap, op.Id)
 			return
 		}
 		kv.mu.Unlock()
