@@ -34,6 +34,7 @@
     server提供shard，将导致提供的shard不一致
   - 改进：添加了ExpCommitIndex数据结构，记录每个shard中已经start的
     最大logIndex，仅当该shard中所有start的log都apply了才能提供
+    - 回复时不需要是leader，但不是leader不会被采用，用于辅助判断
     - ExpCommitIndex需要持久化
   - 待考虑：是否需要考虑ci，如果是，如何gc
 

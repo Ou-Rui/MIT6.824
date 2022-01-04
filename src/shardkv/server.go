@@ -705,13 +705,13 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		//	delete(kv.ResultMap, op.Id)
 		//	return
 		//}
-		if op.ConfigIndex != kv.ss.ci {
-			reply.Err = ErrWrongGroup
-			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
-				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
-			//delete(kv.ResultMap, op.Id)
-			return
-		}
+		//if op.ConfigIndex != kv.ss.ci {
+		//	reply.Err = ErrWrongGroup
+		//	DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+		//		kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+		//	//delete(kv.ResultMap, op.Id)
+		//	return
+		//}
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		// check Leadership and Term+
@@ -796,13 +796,13 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		//	delete(kv.ResultMap, op.Id)
 		//	return
 		//}
-		if op.ConfigIndex != kv.ss.ci {
-			reply.Err = ErrWrongGroup
-			DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
-				kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
-			//delete(kv.ResultMap, op.Id)
-			return
-		}
+		//if op.ConfigIndex != kv.ss.ci {
+		//	reply.Err = ErrWrongGroup
+		//	DPrintf("[KV %v-%v]: ci has changed.. id = %v return ErrWrongGroup, args.ci = %v, curCi = %v",
+		//		kv.gid, kv.me, args.Id, args.ConfigIndex, kv.ss.ci)
+		//	//delete(kv.ResultMap, op.Id)
+		//	return
+		//}
 		kv.mu.Unlock()
 		//time.Sleep(10 * time.Millisecond)
 		curTerm, isLeader := kv.rf.GetState()
