@@ -4,6 +4,7 @@ package shardkv
 import (
 	"bytes"
 	"log"
+	"math"
 	"mymr/src/labrpc"
 	"mymr/src/shardmaster"
 	"sync/atomic"
@@ -43,6 +44,9 @@ type ShardState struct {
 	ready      bool                        // all shard ready?
 	readyShard []bool                      // index: shard
 	OnCharge   []int                       // index: shard, value: configIndex
+	// expected commitIndex
+	// only when CommitIndex >= ExpCommitIndex[i], KV can offer shard i to other servers
+	ExpCommitIndex []int
 }
 
 type ShardKV struct {
@@ -248,6 +252,12 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 						kv.ss.configs[queryIndex] = &config
 					}
 					err := kv.sendSRHandler(&queryIndex, shard, configIndex)
+					if kv.killed() || kv.ss.ci != configIndex {
+						DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
+							kv.gid, kv.me, kv.ss.ci, configIndex)
+						kv.mu.Unlock()
+						return
+					}
 					if err == OK {
 						DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v,",
 							kv.gid, kv.me, shard, configIndex, queryIndex)
@@ -283,15 +293,16 @@ func (kv *ShardKV) shardRequestLoop(configIndex int) {
 func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 	// queryIndex redo flag
 	// redo: network fail or his ci is smaller
-	redo := false
+	//redo := false
 	// network or wrong leader fail count
-	nwOrWlFailCnt := 0
+	//nwOrWlFailCnt := 0
 
 	config := kv.ss.configs[*queryIndex]
 	gid := config.Shards[shard]
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
 		kv.gid, kv.me, *queryIndex, gid, shard, config)
+	// responsible server is myself...
 	if gid == kv.gid {
 		if kv.ss.OnCharge[shard] >= *queryIndex {
 			kv.ss.OnCharge[shard] = kv.ss.ci
@@ -303,62 +314,67 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 		} else {
 			return ErrContinue
 		}
-
 	}
+	tmpReply := &ShardReply{}
+	validCnt := 0
+	half := int(math.Ceil(float64(len(servers)) / 2))
 	// server loop
 	for _, server := range servers {
 		ok, reply := kv.sendShardRequest(server, shard, *queryIndex)
+		// check alive && configIndex
+		if kv.killed() || kv.ss.ci != curCi {
+			DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
+				kv.gid, kv.me, kv.ss.ci, curCi)
+			return ErrExit
+		}
 		if ok {
-			// receive shardRequest reply, check alive && configIndex
-			if kv.killed() || kv.ss.ci != curCi {
-				DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
-					kv.gid, kv.me, kv.ss.ci, curCi)
-				return ErrExit
-			}
 			if reply.Err == OK {
-				for key, value := range reply.Data {
-					kv.Data[key] = value
+				validCnt++
+				if reply.Term > tmpReply.Term || (reply.Term == tmpReply.Term && reply.IsLeader) {
+					tmpReply = reply
 				}
-				for id, result := range reply.ResultMap {
-					newResult := Result{}
-					deepCopy(newResult, result)
-					kv.ResultMap[id] = newResult
+				// half OK && contains leader with the largest Term
+				if tmpReply.IsLeader && validCnt >= half {
+					for key, value := range tmpReply.Data {
+						kv.Data[key] = value
+					}
+					for id, result := range tmpReply.ResultMap {
+						newResult := Result{}
+						deepCopy(newResult, result)
+						kv.ResultMap[id] = newResult
+					}
+					kv.ss.OnCharge[shard] = kv.ss.ci
+					kv.ss.readyShard[shard] = true
+					kv.ss.ready = kv.isReady()
+					DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
+						kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+					return OK
 				}
-				kv.ss.OnCharge[shard] = kv.ss.ci
-				kv.ss.readyShard[shard] = true
-				kv.ss.ready = kv.isReady()
-				DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
-					kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
-				return OK
 			} else if reply.Err == ErrKilled {
 				// ask next server, nothing to do..
-			} else if reply.Err == ErrWrongLeader {
-				nwOrWlFailCnt++
+			} else if reply.Err == ErrWrongECI {
+				// wait...
 			} else if reply.Err == ErrWrongConfigIndex {
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v, reply.ci = %v, kv.ci = %v ",
 					kv.gid, kv.me, shard, reply.Err, reply.ConfigIndex, kv.ss.ci)
 				if reply.ConfigIndex > kv.ss.ci {
 					return ErrExit
 				} else {
-					redo = true
-					break
+					// wait...
 				}
 			} else if reply.Err == ErrWrongOwner {
+				validCnt++
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v, break ",
 					kv.gid, kv.me, shard, reply.Err)
-				break
 			}
 		} else {
 			// network failed
-			nwOrWlFailCnt++
+			//nwOrWlFailCnt++
 		}
 	}
-	if nwOrWlFailCnt == len(servers) {
-		redo = true
-	}
-	if redo {
-		DPrintf("[KV %v-%v]: redo queryIndex = %v, nwOrWlFailCnt = %v",
-			kv.gid, kv.me, *queryIndex, nwOrWlFailCnt)
+	if validCnt < half {
+		DPrintf("[KV %v-%v]: redo queryIndex = %v, validCnt = %v",
+			kv.gid, kv.me, *queryIndex, validCnt)
 		*queryIndex++ // retry the same queryIndex later
 		kv.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
@@ -397,7 +413,9 @@ func (kv *ShardKV) sendShardRequest(server string, shard int, queryIndex int) (o
 // ShardRequest RPC
 // called by other ShardKV Servers for Requesting Shards
 func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
-	_, isLeader := kv.rf.GetState()
+	term, isLeader := kv.rf.GetState()
+	reply.Term = term
+	reply.IsLeader = isLeader
 
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
@@ -410,12 +428,12 @@ func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
 
 	// leadership check
 	// only leader can offer shards, because follower may have committed by not applied logs
-	if !isLeader {
-		DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, I'm not Leader..",
-			kv.gid, kv.me, args.Gid, args.Server)
-		reply.Err = ErrWrongLeader
-		return
-	}
+	//if !isLeader {
+	//	DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, I'm not Leader..",
+	//		kv.gid, kv.me, args.Gid, args.Server)
+	//	reply.Err = ErrWrongLeader
+	//	return
+	//}
 
 	// configIndex check, maybe too strict??
 	if args.ConfigIndex != kv.ss.ci {
@@ -431,6 +449,14 @@ func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
 		DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, ownership check failed, require = %v, mine = %v",
 			kv.gid, kv.me, args.Gid, args.Server, args.QueryIndex, kv.ss.OnCharge[args.Shard])
 		reply.Err = ErrWrongOwner
+		return
+	}
+
+	// Expected CommitIndex check
+	if kv.ss.ExpCommitIndex[args.Shard] > kv.CommitIndex {
+		DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, ExpCommitIndex check failed, kv.CommitIndex = %v, Exp = %v",
+			kv.gid, kv.me, args.Gid, args.Server, kv.CommitIndex, kv.ss.ExpCommitIndex[args.Shard])
+		reply.Err = ErrWrongECI
 		return
 	}
 
@@ -517,7 +543,7 @@ func (kv *ShardKV) applyLoop() {
 					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 				snapshot, _ := applyMsg.Command.([]byte)
 				if len(snapshot) > 0 {
-					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge = DecodeSnapshot(snapshot)
+					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.ExpCommitIndex = DecodeSnapshot(snapshot)
 				} else {
 					kv.Data = make(map[string]string)
 					kv.ResultMap = make(map[string]Result)
@@ -544,12 +570,6 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 		Err:    "",
 		Status: Done,
 	}
-	//if op.ConfigIndex != kv.ss.ci {
-	//	result.Status = Redo
-	//	DPrintf("[KV %v-%v]: applyOne, ci error, op.ci = %v, kv.ci = %v",
-	//		kv.gid, kv.me, op.ConfigIndex, kv.ss.ci)
-	//	return
-	//}
 	if op.OpType == GetType {
 		value, ok := kv.Data[op.Key]
 		if ok {
@@ -613,14 +633,15 @@ func (kv *ShardKV) snapshotLoop() {
 func (kv *ShardKV) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
-	DPrintf("[KV %v-%v]: commitIndex = %v, OnCharge = %v, data = %v",
-		kv.gid, kv.me, kv.CommitIndex, kv.ss.OnCharge, kv.Data)
+	DPrintf("[KV %v-%v]: commitIndex = %v, OnCharge = %v, expCI = %v, data = %v",
+		kv.gid, kv.me, kv.CommitIndex, kv.ss.OnCharge, kv.ss.ExpCommitIndex, kv.Data)
 	encoder.Encode(kv.Data)
 
 	encoder.Encode(kv.ResultMap)
 	encoder.Encode(kv.CommitIndex)
 	encoder.Encode(kv.CommitTerm)
 	encoder.Encode(kv.ss.OnCharge)
+	encoder.Encode(kv.ss.ExpCommitIndex)
 
 	data := writer.Bytes()
 	DPrintf("[KV %v-%v]: snapshot = %v", kv.gid, kv.me, data)
@@ -660,8 +681,13 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 		ConfigIndex: args.ConfigIndex,
 	}
 	kv.mu.Unlock()
-	_, term, isLeader := kv.rf.Start(op)
+	index, term, isLeader := kv.rf.Start(op)
 	kv.mu.Lock()
+
+	shard := key2shard(args.Key)
+	kv.ss.ExpCommitIndex[shard] = index
+	DPrintf("[KV %v-%v]: key = %v, shard = %v, ExpCommitIndex = %v, CommitIndex = %v",
+		kv.gid, kv.me, args.Key, shard, kv.ss.ExpCommitIndex, kv.CommitIndex)
 
 	if !isLeader {
 		reply.Err = ErrWrongLeader
@@ -746,8 +772,13 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	kv.mu.Unlock()
-	_, term, isLeader := kv.rf.Start(op)
+	index, term, isLeader := kv.rf.Start(op)
 	kv.mu.Lock()
+
+	shard := key2shard(args.Key)
+	kv.ss.ExpCommitIndex[shard] = index
+	DPrintf("[KV %v-%v]: key = %v, shard = %v, ExpCommitIndex = %v, CommitIndex = %v",
+		kv.gid, kv.me, args.Key, shard, kv.ss.ExpCommitIndex, kv.CommitIndex)
 
 	if !isLeader {
 		reply.Err = ErrWrongLeader
@@ -869,11 +900,12 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.ss = ShardState{
-		ci:         0,
-		configs:    make(map[int]*shardmaster.Config),
-		ready:      false,
-		readyShard: make([]bool, shardmaster.NShards),
-		OnCharge:   make([]int, shardmaster.NShards),
+		ci:             0,
+		configs:        make(map[int]*shardmaster.Config),
+		ready:          false,
+		readyShard:     make([]bool, shardmaster.NShards),
+		OnCharge:       make([]int, shardmaster.NShards),
+		ExpCommitIndex: make([]int, shardmaster.NShards),
 	}
 	for i := range kv.ss.OnCharge {
 		kv.ss.OnCharge[i] = -1
@@ -881,8 +913,9 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge = DecodeSnapshot(snapshot)
-		DPrintf("[KV %v-%v] read from persister, data = %v, commitIndex = %v", kv.gid, kv.me, kv.Data, kv.CommitIndex)
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.ExpCommitIndex = DecodeSnapshot(snapshot)
+		DPrintf("[KV %v-%v] read from persister, onCharge = %v, ECI = %v, data = %v, commitIndex = %v",
+			kv.gid, kv.me, kv.ss.OnCharge, kv.ss.ExpCommitIndex, kv.Data, kv.CommitIndex)
 	}
 
 	// Goroutines

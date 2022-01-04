@@ -48,6 +48,7 @@ const (
 	ErrNotReady         = "ErrNotReady"
 	ErrWrongConfigIndex = "ErrWrongConfigIndex"
 	ErrWrongOwner       = "ErrWrongOwner"
+	ErrWrongECI         = "ErrWrongECI"
 	ErrKilled           = "ErrKilled"
 	ErrContinue         = "ErrContinue"
 	ErrExit             = "ErrExit"
@@ -97,6 +98,8 @@ type ShardReply struct {
 	Data        map[string]string
 	ResultMap   map[string]Result
 	Err         Err
+	IsLeader    bool
+	Term        int
 }
 
 //type CommitArgs struct {
@@ -126,14 +129,16 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 }
 
 func DecodeSnapshot(snapshot []byte) (
-	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int, OnCharge []int) {
+	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int,
+	OnCharge []int, ExpCommitIndex []int) {
 	reader := bytes.NewBuffer(snapshot)
 	decoder := labgob.NewDecoder(reader)
 	if decoder.Decode(&Data) != nil ||
 		decoder.Decode(&ResultMap) != nil ||
 		decoder.Decode(&CommitIndex) != nil ||
 		decoder.Decode(&CommitTerm) != nil ||
-		decoder.Decode(&OnCharge) != nil {
+		decoder.Decode(&OnCharge) != nil ||
+		decoder.Decode(&ExpCommitIndex) != nil {
 		DPrintf("Decode snapshot error...")
 	}
 	return
