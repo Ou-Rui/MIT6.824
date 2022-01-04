@@ -330,25 +330,14 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 		if ok {
 			if reply.Err == OK {
 				validCnt++
-				if reply.Term > tmpReply.Term || (reply.Term == tmpReply.Term && reply.IsLeader) {
+				DPrintf("[KV %v-%v]: shard %v Request ok, reply = %v, tmp = %v",
+					kv.gid, kv.me, shard, reply, tmpReply)
+				if reply.Term > tmpReply.Term || (reply.Term >= tmpReply.Term && reply.IsLeader) {
 					tmpReply = reply
 				}
 				// half OK && contains leader with the largest Term
 				if tmpReply.IsLeader && validCnt >= half {
-					for key, value := range tmpReply.Data {
-						kv.Data[key] = value
-					}
-					for id, result := range tmpReply.ResultMap {
-						newResult := Result{}
-						deepCopy(newResult, result)
-						kv.ResultMap[id] = newResult
-					}
-					kv.ss.OnCharge[shard] = kv.ss.ci
-					kv.ss.readyShard[shard] = true
-					kv.ss.ready = kv.isReady()
-					DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
-						kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
-					return OK
+					break
 				}
 			} else if reply.Err == ErrKilled {
 				// ask next server, nothing to do..
@@ -364,17 +353,41 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 				}
 			} else if reply.Err == ErrWrongOwner {
 				validCnt++
-				DPrintf("[KV %v-%v]: shard %v Request failed, %v, break ",
+				//if reply.Term > tmpReply.Term || (reply.Term == tmpReply.Term && reply.IsLeader) {
+				//	tmpReply = reply
+				//}
+				DPrintf("[KV %v-%v]: shard %v Request failed, %v",
 					kv.gid, kv.me, shard, reply.Err)
 			}
 		} else {
 			// network failed
 			//nwOrWlFailCnt++
 		}
+		DPrintf("[KV %v-%v]: validCnt = %v, err = %v",
+			kv.gid, kv.me, validCnt, reply.Err)
 	}
-	if validCnt < half {
-		DPrintf("[KV %v-%v]: redo queryIndex = %v, validCnt = %v",
-			kv.gid, kv.me, *queryIndex, validCnt)
+	// half OK && contains leader with the largest Term
+	if tmpReply.IsLeader && validCnt >= half {
+		for key, value := range tmpReply.Data {
+			kv.Data[key] = value
+		}
+		for id, result := range tmpReply.ResultMap {
+			newResult := Result{}
+			deepCopy(newResult, result)
+			kv.ResultMap[id] = newResult
+		}
+		kv.ss.OnCharge[shard] = kv.ss.ci
+		kv.ss.readyShard[shard] = true
+		kv.ss.ready = kv.isReady()
+		DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
+			kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+		return OK
+	}
+
+	if validCnt < half || (!tmpReply.IsLeader && validCnt >= half) {
+		//if validCnt < half {
+		DPrintf("[KV %v-%v]: redo queryIndex = %v, validCnt = %v, tmpReply = %v",
+			kv.gid, kv.me, *queryIndex, validCnt, tmpReply)
 		*queryIndex++ // retry the same queryIndex later
 		kv.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)

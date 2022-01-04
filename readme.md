@@ -16,6 +16,8 @@
 虽然到4B才想起来写...
 
 ### 2022.1.4
+PASS  JoinLeave && Static  
+DEBUG Snapshot
 - **找谁要shard？**
   - 原先：只问leader要shard，找到一个正确返回的leader就认为对了
   - 问题：Partition时可能会有多个leader
