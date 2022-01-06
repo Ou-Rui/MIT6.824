@@ -1,19 +1,80 @@
 # MIT 6.824
 
-## 还需要考虑的点
-- 不能问到一个leader就不问其他人了，因为partition时可能有多个leader
-  - 至少要问大多数人，能实现吗？还是要问所有人？
-  - 如果只问大多数人，那必然是以Term最高为准，但这个人可能不是leader
-    如何判断与Client的交互情况？
-  - 或者大多数+包含最高Term的leader
-- 先apply完所有，再向别人要shard，和给别人发shard
-  - 要到全部shard后，ready开始处理请求
-- 不匹配ci的op到底要不要apply，如果在apply前后来了ShardRequest
-  不就不一致了吗
+## Lab4B 方案描述
+### 只有leader负责要config
+- 要到config后不直接更新，生成log，共识后更新
+- 这样一来**kv.ss.ci**就是共识后的结果
+- 此时，apply时就可以将op.ci与kv.ss.ci不匹配的log废弃，
+  不apply，并将请求打回
 
+### 只有leader负责要shard
+- leader去要shard，要到之后压缩放在log里
+- Commit之后再更新data, resultMap, onCharge...
+- 因此给出的shard，一定是在Group中有多数共识的
+
+### 被请求的server在什么情况下给出shard
+- Not be killed
+- ConfigIndex: ***kv.ss.ci >= QueryIndex***
+- 自己可以不是leader
+- OnCharge = QueryIndex
+
+### leader如何确定要到的shard合法
+- 因为收到的shard一定是共识过的结果，因此只要拿到一个就行
+- 收到时检查：killed, ci
+
+### 什么情况下，请求者应该继续等待该QueryIndex
+- 网络错误
+- ci不对
+
+或者说，什么时候该QueryIndex没救了
+都说Not OnCharge
+
+### 什么时候开始提供服务
+- ci与client匹配，OnCharge[shard] == ci
+
+## TODO
+- 发送，接收 ShardRequest RPC 的逻辑
+- Shard Log的Start与Apply
+- 打回不匹配的 Request
 
 ## 更新日志
 虽然到4B才想起来写...
+
+### 2022.1.6
+重构代码......
+#### queryConfigLoop()
+- 所有人都可以query config，并cache到kv.ss.configs
+- 但不能更新kv.ss.ci
+- 找到新的config时，尝试Start一个ConfigLog (OpType = ConfigType)
+  - 如果不是Leader，会被Raft层打回
+  - 因此只有Leader可以Start成功
+- NOTE：可能会Start多个相同的ConfigLog，但不影响
+
+#### applyLoop()
+- CommandValid == true时，按照OpType分类
+  - Get/Put/Append Type时，按原先的方案处理，封装到applyGetPutAppend
+  - ConfigType时，调用applyConfig，更新kv.ss.ci
+
+#### applyConfig()
+- Called by applyLoop()
+- 更新kv.ss.ci，调用newConfigHandler()更新kv.ss的信息
+
+#### newConfigHandler()
+- Called by applyConfig()
+- 根据kv.ss.ci，更新readyShard和onCharge
+- 依据kv.ss.ci分为两类处理：
+  - 第一个config:
+    - 负责的：  ready，onCharge = 1
+    - 不负责的：unready
+  - 后续的新config
+    - 所有shard都标记为unready
+    - 负责的: go shardRequestLoop(ci, shard)
+
+#### shardRequestLoop()
+- 输入：当前ci，目标shard
+- 用于追踪config，向曾经负责过该shard的server发送ShardRequest RPC
+- 不同的shard并行请求
+- 改了一半
 
 ### 2022.1.4
 PASS  JoinLeave && Static  

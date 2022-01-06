@@ -43,7 +43,7 @@ type ShardState struct {
 	ci         int                         // latest config index
 	ready      bool                        // all shard ready?
 	readyShard []bool                      // index: shard
-	OnCharge   []int                       // index: shard, value: configIndex
+	onCharge   []int                       // index: shard, value: configIndex
 	// expected commitIndex
 	// only when CommitIndex >= ExpCommitIndex[i], KV can offer shard i to other servers
 	ExpCommitIndex []int
@@ -72,21 +72,21 @@ type ShardKV struct {
 	ss        ShardState
 }
 
-// OnCharge ==> readyShard && ready
+// onCharge ==> readyShard && ready
 // called when apply a snapshot
 func (kv *ShardKV) readOnCharge() {
 	ci := kv.ss.ci
 	for shard := range kv.ss.readyShard {
-		if kv.ss.configs[ci].Shards[shard] == kv.gid && kv.ss.OnCharge[shard] >= ci {
-			// responsible && OnCharge ==> shard ready
+		if kv.ss.configs[ci].Shards[shard] == kv.gid && kv.ss.onCharge[shard] >= ci {
+			// responsible && onCharge ==> shard ready
 			kv.ss.readyShard[shard] = true
 		} else {
 			kv.ss.readyShard[shard] = false
 		}
 	}
 	kv.ss.ready = kv.isReady()
-	DPrintf("[KV %v-%v]: readOnCharge, OnCharge = %v, ci = %v, readyShard = %v, ready = %v",
-		kv.gid, kv.me, kv.ss.OnCharge, ci, kv.ss.readyShard, kv.ss.ready)
+	DPrintf("[KV %v-%v]: readonCharge, onCharge = %v, ci = %v, readyShard = %v, ready = %v",
+		kv.gid, kv.me, kv.ss.onCharge, ci, kv.ss.readyShard, kv.ss.ready)
 }
 
 // check kv.ss.ready according to readyShard and Config
@@ -116,35 +116,14 @@ func (kv *ShardKV) queryConfigLoop() {
 			//DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
 			return
 		}
-		// must first get config1
+		// query latest config by default
+		query := -1
+		// if kv doesn't contain any config, must get config[1] first
 		if !kv.containsConfig() {
-			DPrintf("[KV %v-%v]: query for first config...",
-				kv.gid, kv.me)
-
-			kv.mu.Unlock()
-			config := kv.mck.Query(1)
-			kv.mu.Lock()
-			if kv.killed() {
-				kv.mu.Unlock()
-				DPrintf("[KV %v-%v]: query killed unlock", kv.gid, kv.me)
-				return
-			}
-
-			DPrintf("[KV %v-%v]: first config = %v ?...",
-				kv.gid, kv.me, config)
-			if len(config.Groups) > 0 {
-				kv.ss.ci = 1
-				kv.ss.configs[config.Num] = &config
-				kv.newConfigHandler(config)
-			}
-			kv.mu.Unlock()
-			//DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
-			time.Sleep(20 * time.Millisecond)
-			continue
+			query = 1
 		}
-
 		kv.mu.Unlock()
-		config := kv.mck.Query(-1)
+		config := kv.mck.Query(query)
 		kv.mu.Lock()
 		if kv.killed() {
 			kv.mu.Unlock()
@@ -156,131 +135,125 @@ func (kv *ShardKV) queryConfigLoop() {
 			DPrintf("[KV %v-%v]: getConfig = %v", kv.gid, kv.me, config)
 			DPrintf("[KV %v-%v]: out-of-date.. queryConfigIndex = %v, curIndex = %v",
 				kv.gid, kv.me, config.Num, kv.ss.ci)
-			if kv.ss.configs[config.Num] != nil {
-				kv.ss.configs[config.Num] = &config
-				DPrintf("[KV %v-%v]: cache.., config = %v",
-					kv.gid, kv.me, kv.ss.configs)
-			}
+
 		} else if config.Num == kv.ss.ci {
 			// common situation, do nothing
 		} else {
-			DPrintf("[KV %v-%v]: getConfig = %v, up-to-date!", kv.gid, kv.me, config)
+			DPrintf("[KV %v-%v]: getNewConfig = %v, isLeader = %v", kv.gid, kv.me, config)
+			op := Op{
+				OpType:      ConfigType,
+				ConfigIndex: config.Num,
+				Data:        config,
+			}
+			kv.mu.Unlock()
+			if _, _, isLeader := kv.rf.Start(op); isLeader {
+				DPrintf("[KV %v-%v]: I'm Leader, Starting ConfigLog! config = %v", kv.gid, kv.me, config)
+			}
+			kv.mu.Lock()
+		}
+		// cache config
+		if kv.ss.configs[config.Num] == nil {
 			kv.ss.configs[config.Num] = &config
-			kv.ss.ci = config.Num
-			kv.newConfigHandler(config)
+			DPrintf("[KV %v-%v]: queryConfigLoop, cache.., config = %v",
+				kv.gid, kv.me, kv.ss.configs)
 		}
 		kv.mu.Unlock()
 		//DPrintf("[KV %v-%v]: query unlock", kv.gid, kv.me)
-		kv.resultCond.Broadcast()
+		kv.resultCond.Broadcast() // Periodically Wakeup..
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
 // newConfigHandler
 // called by queryConfigLoop when get a new config
-func (kv *ShardKV) newConfigHandler(config shardmaster.Config) {
-	//config := kv.ss.configs[kv.ss.ci]
+func (kv *ShardKV) newConfigHandler() {
+	config := kv.ss.configs[kv.ss.ci]
 	if kv.ss.ci == 1 {
 		// first config
-		for i := 0; i < shardmaster.NShards; i++ {
-			if config.Shards[i] == kv.gid {
+		for shard := 0; shard < shardmaster.NShards; shard++ {
+			if config.Shards[shard] == kv.gid {
 				// responsible
-				kv.ss.readyShard[i] = true
-				kv.ss.OnCharge[i] = maxInt(kv.ss.OnCharge[i], kv.ss.ci)
+				kv.ss.readyShard[shard] = true
+				kv.ss.onCharge[shard] = 1
 			} else {
-				kv.ss.readyShard[i] = false
+				kv.ss.readyShard[shard] = false
 			}
 		}
-		kv.ss.ready = kv.isReady()
 	} else {
 		// new config
-		kv.readOnCharge()
-		if kv.ss.ready {
-			return
-		}
-		for i := 0; i < shardmaster.NShards; i++ {
-			if config.Shards[i] == kv.gid && kv.ss.readyShard[i] {
-				// responsible && ready in last config
-				kv.ss.readyShard[i] = true
-				kv.ss.OnCharge[i] = kv.ss.ci
-			} else {
-				kv.ss.readyShard[i] = false
+		for shard := 0; shard < shardmaster.NShards; shard++ {
+			kv.ss.readyShard[shard] = false
+			if config.Shards[shard] == kv.gid {
+				// responsible
+				go kv.shardRequestLoop(kv.ss.ci, shard)
 			}
 		}
-		kv.ss.ready = kv.isReady()
-		if !kv.ss.ready {
-			go kv.shardRequestLoop(kv.ss.ci)
-		}
 	}
-	DPrintf("[KV %v-%v]: newConfigHandler, config = %v, readyShard = %v, OnCharge = %v",
-		kv.gid, kv.me, kv.ss.configs[kv.ss.ci], kv.ss.readyShard, kv.ss.OnCharge)
+	DPrintf("[KV %v-%v]: newConfigHandler, config = %v, readyShard = %v, onCharge = %v",
+		kv.gid, kv.me, kv.ss.configs[kv.ss.ci], kv.ss.readyShard, kv.ss.onCharge)
 }
 
 // shardRequestLoop, called by newConfigHandler
 // request shards for a given configIndex
-func (kv *ShardKV) shardRequestLoop(configIndex int) {
+func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 	for {
 		kv.mu.Lock()
-		if kv.killed() || kv.ss.ci != configIndex {
+		if kv.killed() || kv.ss.ci != ci {
 			DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
-				kv.gid, kv.me, kv.ss.ci, configIndex)
+				kv.gid, kv.me, kv.ss.ci, ci)
 			kv.mu.Unlock()
 			return
 		}
-		// shard loop
-		for shard := range kv.ss.readyShard {
-			// unready && responsible
-			if !kv.ss.readyShard[shard] && kv.ss.configs[configIndex].Shards[shard] == kv.gid {
-				// index of config for shard i , start from curIndex-1, decrease..
-				queryIndex := configIndex - 1
-				// queryIndex loop
-				for queryIndex > 0 {
-					// if not cached the config, query..
-					if kv.ss.configs[queryIndex] == nil {
-						kv.mu.Unlock()
-						config := kv.mck.Query(queryIndex)
-						kv.mu.Lock()
-						if kv.killed() || kv.ss.ci != configIndex {
-							DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
-								kv.gid, kv.me, kv.ss.ci, configIndex)
-							kv.mu.Unlock()
-							return
-						}
-
-						DPrintf("[KV %v-%v]: query for config%v, config = %v",
-							kv.gid, kv.me, queryIndex, config)
-						kv.ss.configs[queryIndex] = &config
-					}
-					err := kv.sendSRHandler(&queryIndex, shard, configIndex)
-					if kv.killed() || kv.ss.ci != configIndex {
+		// unready && responsible
+		if !kv.ss.readyShard[shard] && kv.ss.configs[ci].Shards[shard] == kv.gid {
+			// index of config for shard i , start from curIndex-1, decrease..
+			queryIndex := ci - 1
+			// queryIndex loop
+			for queryIndex > 0 {
+				// if not cached the config, query..
+				if kv.ss.configs[queryIndex] == nil {
+					kv.mu.Unlock()
+					config := kv.mck.Query(queryIndex)
+					kv.mu.Lock()
+					if kv.killed() || kv.ss.ci != ci {
 						DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
-							kv.gid, kv.me, kv.ss.ci, configIndex)
+							kv.gid, kv.me, kv.ss.ci, ci)
 						kv.mu.Unlock()
 						return
 					}
-					if err == OK {
-						DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v,",
-							kv.gid, kv.me, shard, configIndex, queryIndex)
-						if kv.ss.ready {
-							DPrintf("[KV %v-%v]: shardRequestLoop for config%v complete!!",
-								kv.gid, kv.me, configIndex)
-							kv.mu.Unlock()
-							return
-						} else {
-							DPrintf("[KV %v-%v]: shardRequestLoop next shard",
-								kv.gid, kv.me)
-							break
-						}
-					} else if err == ErrExit {
-						DPrintf("[KV %v-%v]: shardRequestLoop for config%v exit(-1)..",
-							kv.gid, kv.me, configIndex)
-						kv.mu.Unlock()
-						return
-					} else if err == ErrContinue {
-						// nothing to do
-					}
-					queryIndex--
+					DPrintf("[KV %v-%v]: query for config%v, config = %v",
+						kv.gid, kv.me, queryIndex, config)
+					kv.ss.configs[queryIndex] = &config
 				}
+				err := kv.sendSRHandler(&queryIndex, shard, ci)
+				if kv.killed() || kv.ss.ci != ci {
+					DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
+						kv.gid, kv.me, kv.ss.ci, ci)
+					kv.mu.Unlock()
+					return
+				}
+				if err == OK {
+					DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v,",
+						kv.gid, kv.me, shard, ci, queryIndex)
+					if kv.ss.ready {
+						DPrintf("[KV %v-%v]: shardRequestLoop for config%v complete!!",
+							kv.gid, kv.me, ci)
+						kv.mu.Unlock()
+						return
+					} else {
+						DPrintf("[KV %v-%v]: shardRequestLoop next shard",
+							kv.gid, kv.me)
+						break
+					}
+				} else if err == ErrExit {
+					DPrintf("[KV %v-%v]: shardRequestLoop for config%v exit(-1)..",
+						kv.gid, kv.me, ci)
+					kv.mu.Unlock()
+					return
+				} else if err == ErrContinue {
+					// nothing to do
+				}
+				queryIndex--
 			}
 		}
 		kv.mu.Unlock()
@@ -304,12 +277,12 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 		kv.gid, kv.me, *queryIndex, gid, shard, config)
 	// responsible server is myself...
 	if gid == kv.gid {
-		if kv.ss.OnCharge[shard] >= *queryIndex {
-			kv.ss.OnCharge[shard] = kv.ss.ci
+		if kv.ss.onCharge[shard] >= *queryIndex {
+			kv.ss.onCharge[shard] = kv.ss.ci
 			kv.ss.readyShard[shard] = true
 			kv.ss.ready = kv.isReady()
-			DPrintf("[KV %v-%v]: getShard %v from myself, ready = %v, readyShard = %v, OnCharge = %v",
-				kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+			DPrintf("[KV %v-%v]: getShard %v from myself, ready = %v, readyShard = %v, onCharge = %v",
+				kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.onCharge)
 			return OK
 		} else {
 			return ErrContinue
@@ -329,16 +302,12 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 		}
 		if ok {
 			if reply.Err == OK {
-				validCnt++
 				DPrintf("[KV %v-%v]: shard %v Request ok, reply = %v, tmp = %v",
 					kv.gid, kv.me, shard, reply, tmpReply)
 				if reply.Term > tmpReply.Term || (reply.Term >= tmpReply.Term && reply.IsLeader) {
 					tmpReply = reply
 				}
 				// half OK && contains leader with the largest Term
-				if tmpReply.IsLeader && validCnt >= half {
-					break
-				}
 			} else if reply.Err == ErrKilled {
 				// ask next server, nothing to do..
 			} else if reply.Err == ErrWrongECI {
@@ -353,11 +322,11 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 				}
 			} else if reply.Err == ErrWrongOwner {
 				validCnt++
-				//if reply.Term > tmpReply.Term || (reply.Term == tmpReply.Term && reply.IsLeader) {
-				//	tmpReply = reply
-				//}
-				DPrintf("[KV %v-%v]: shard %v Request failed, %v",
-					kv.gid, kv.me, shard, reply.Err)
+				if reply.Term > tmpReply.Term || (reply.Term == tmpReply.Term && reply.IsLeader) {
+					tmpReply = reply
+				}
+				DPrintf("[KV %v-%v]: shard %v Request failed, %v, reply = %v",
+					kv.gid, kv.me, shard, reply.Err, reply)
 			}
 		} else {
 			// network failed
@@ -366,8 +335,9 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 		DPrintf("[KV %v-%v]: validCnt = %v, err = %v",
 			kv.gid, kv.me, validCnt, reply.Err)
 	}
-	// half OK && contains leader with the largest Term
-	if tmpReply.IsLeader && validCnt >= half {
+	// get valid shard, return OK
+	// half OK && contains leader with the largest Term && reply is OK
+	if validCnt >= half && tmpReply.IsLeader && tmpReply.Err == OK {
 		for key, value := range tmpReply.Data {
 			kv.Data[key] = value
 		}
@@ -376,14 +346,14 @@ func (kv *ShardKV) sendSRHandler(queryIndex *int, shard, curCi int) Err {
 			deepCopy(newResult, result)
 			kv.ResultMap[id] = newResult
 		}
-		kv.ss.OnCharge[shard] = kv.ss.ci
+		kv.ss.onCharge[shard] = kv.ss.ci
 		kv.ss.readyShard[shard] = true
 		kv.ss.ready = kv.isReady()
-		DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, OnCharge = %v",
-			kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.OnCharge)
+		DPrintf("[KV %v-%v]: getShard %v, ready = %v, readyShard = %v, onCharge = %v",
+			kv.gid, kv.me, shard, kv.ss.ready, kv.ss.readyShard, kv.ss.onCharge)
 		return OK
 	}
-
+	// try again
 	if validCnt < half || (!tmpReply.IsLeader && validCnt >= half) {
 		//if validCnt < half {
 		DPrintf("[KV %v-%v]: redo queryIndex = %v, validCnt = %v, tmpReply = %v",
@@ -458,9 +428,9 @@ func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
 	}
 
 	// shard ownership check
-	if kv.ss.OnCharge[args.Shard] < args.QueryIndex {
+	if kv.ss.onCharge[args.Shard] < args.QueryIndex {
 		DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, ownership check failed, require = %v, mine = %v",
-			kv.gid, kv.me, args.Gid, args.Server, args.QueryIndex, kv.ss.OnCharge[args.Shard])
+			kv.gid, kv.me, args.Gid, args.Server, args.QueryIndex, kv.ss.onCharge[args.Shard])
 		reply.Err = ErrWrongOwner
 		return
 	}
@@ -517,36 +487,19 @@ func (kv *ShardKV) applyLoop() {
 			return
 		}
 		applyMsg := <-kv.applyCh // keep watching applyCh
-		DPrintf("[KV %v-%v]: applyMsg = %v, wait for ready", kv.gid, kv.me, applyMsg)
+		DPrintf("[KV %v-%v]: applyMsg = %v", kv.gid, kv.me, applyMsg)
 		kv.mu.Lock()
-		for !kv.ss.ready {
-			kv.mu.Unlock()
-			if kv.killed() {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-			kv.mu.Lock()
-		}
-		DPrintf("[KV %v-%v]: applyMsg = %v, ready!", kv.gid, kv.me, applyMsg)
+
 		if applyMsg.CommandValid {
-			// common log apply
+			// op apply
 			op, _ := applyMsg.Command.(Op)
-			id := op.Id
-			DPrintf("[KV %v-%v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-				kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
-			if applyMsg.CommandIndex >= kv.CommitIndex {
-				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
-				kv.CommitTerm = applyMsg.CommandTerm
-				if kv.ResultMap[id].Status == "" || kv.ResultMap[id].Status == Redo {
-					result := kv.applyOne(op) // apply
-					kv.ResultMap[id] = result
-				}
-			} else {
-				DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
-					kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex)
+			if op.OpType == GetType || op.OpType == PutType || op.OpType == AppendType {
+				kv.applyGetPutAppend(applyMsg)
+			} else if op.OpType == ConfigType {
+				kv.applyConfig(op)
+			} else if op.OpType == ShardType {
+
 			}
-			_, requestIndex, clientId := parseRequestId(id)
-			go kv.removePrevious(requestIndex, clientId)
 		} else {
 			if applyMsg.CommandTerm == -10 {
 				DPrintf("[KV %v-%v]: toFollower apply", kv.gid, kv.me)
@@ -556,7 +509,7 @@ func (kv *ShardKV) applyLoop() {
 					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 				snapshot, _ := applyMsg.Command.([]byte)
 				if len(snapshot) > 0 {
-					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.ExpCommitIndex = DecodeSnapshot(snapshot)
+					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.onCharge, kv.ss.ci = DecodeSnapshot(snapshot)
 				} else {
 					kv.Data = make(map[string]string)
 					kv.ResultMap = make(map[string]Result)
@@ -574,7 +527,31 @@ func (kv *ShardKV) applyLoop() {
 	}
 }
 
+// applyGetPutAppend, called by applyLoop()
+func (kv *ShardKV) applyGetPutAppend(applyMsg raft.ApplyMsg) {
+	op, _ := applyMsg.Command.(Op)
+	DPrintf("[KV %v-%v]: %v apply, op.ci = %v, curCi = %v",
+		kv.gid, kv.me, op.OpType, op.ConfigIndex, kv.ss.ci)
+	id := op.Id
+	DPrintf("[KV %v-%v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+		kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
+	if applyMsg.CommandIndex >= kv.CommitIndex {
+		kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
+		kv.CommitTerm = applyMsg.CommandTerm
+		if kv.ResultMap[id].Status == "" || kv.ResultMap[id].Status == Redo {
+			result := kv.applyOne(op) // apply
+			kv.ResultMap[id] = result
+		}
+	} else {
+		DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
+			kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex)
+	}
+	_, requestIndex, clientId := parseRequestId(id)
+	go kv.removePrevious(requestIndex, clientId)
+}
+
 // applyOne operation to key-value database
+// called by applyGetPutAppend()
 func (kv *ShardKV) applyOne(op Op) (result Result) {
 	result = Result{
 		OpType: "op.OpType",
@@ -607,6 +584,21 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 	DPrintf("[KV %v-%v]: applyOne, id = %v, key = %v, value = %v, newValue = %v",
 		kv.gid, kv.me, op.Id, op.Key, op.Value, kv.Data[op.Key])
 	return
+}
+
+// applyConfig, called by applyLoop()
+// update kv.ss.ci
+func (kv *ShardKV) applyConfig(op Op) {
+	DPrintf("[KV %v-%v]: config apply, op.ci = %v, curCi = %v",
+		kv.gid, kv.me, op.OpType, op.ConfigIndex, kv.ss.ci)
+	if op.ConfigIndex > kv.ss.ci {
+		kv.ss.ci = op.ConfigIndex
+		if kv.ss.configs[kv.ss.ci] == nil {
+			kv.ss.configs[kv.ss.ci], _ = op.Data.(*shardmaster.Config)
+		}
+		DPrintf("[KV %v-%v]: update kv.ss.ci = %v,", kv.gid, kv.me, kv.ss.ci)
+		kv.newConfigHandler()
+	}
 }
 
 func (kv *ShardKV) snapshotLoop() {
@@ -646,14 +638,14 @@ func (kv *ShardKV) snapshotLoop() {
 func (kv *ShardKV) generateSnapshot() []byte {
 	writer := new(bytes.Buffer)
 	encoder := labgob.NewEncoder(writer)
-	DPrintf("[KV %v-%v]: commitIndex = %v, OnCharge = %v, expCI = %v, data = %v",
-		kv.gid, kv.me, kv.CommitIndex, kv.ss.OnCharge, kv.ss.ExpCommitIndex, kv.Data)
+	DPrintf("[KV %v-%v]: commitIndex = %v, onCharge = %v, expCI = %v, data = %v",
+		kv.gid, kv.me, kv.CommitIndex, kv.ss.onCharge, kv.ss.ExpCommitIndex, kv.Data)
 	encoder.Encode(kv.Data)
 
 	encoder.Encode(kv.ResultMap)
 	encoder.Encode(kv.CommitIndex)
 	encoder.Encode(kv.CommitTerm)
-	encoder.Encode(kv.ss.OnCharge)
+	encoder.Encode(kv.ss.onCharge)
 	encoder.Encode(kv.ss.ExpCommitIndex)
 
 	data := writer.Bytes()
@@ -917,18 +909,18 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 		configs:        make(map[int]*shardmaster.Config),
 		ready:          false,
 		readyShard:     make([]bool, shardmaster.NShards),
-		OnCharge:       make([]int, shardmaster.NShards),
+		onCharge:       make([]int, shardmaster.NShards),
 		ExpCommitIndex: make([]int, shardmaster.NShards),
 	}
-	for i := range kv.ss.OnCharge {
-		kv.ss.OnCharge[i] = -1
+	for i := range kv.ss.onCharge {
+		kv.ss.onCharge[i] = -1
 	}
 
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.ExpCommitIndex = DecodeSnapshot(snapshot)
-		DPrintf("[KV %v-%v] read from persister, onCharge = %v, ECI = %v, data = %v, commitIndex = %v",
-			kv.gid, kv.me, kv.ss.OnCharge, kv.ss.ExpCommitIndex, kv.Data, kv.CommitIndex)
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.onCharge, kv.ss.ci = DecodeSnapshot(snapshot)
+		DPrintf("[KV %v-%v] read from snapshot, onCharge = %v, ci = %v, data = %v, commitIndex = %v",
+			kv.gid, kv.me, kv.ss.onCharge, kv.ss.ci, kv.Data, kv.CommitIndex)
 	}
 
 	// Goroutines

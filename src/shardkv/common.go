@@ -23,6 +23,8 @@ const (
 	GetType    OpType = "Get"
 	PutType    OpType = "Put"
 	AppendType OpType = "Append"
+	ConfigType OpType = "Config"
+	ShardType  OpType = "Shard"
 )
 
 type Op struct {
@@ -36,6 +38,7 @@ type Op struct {
 	Value string
 
 	ConfigIndex int
+	Data        interface{}
 }
 
 const (
@@ -130,15 +133,15 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 
 func DecodeSnapshot(snapshot []byte) (
 	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int,
-	OnCharge []int, ExpCommitIndex []int) {
+	onCharge []int, ci int) {
 	reader := bytes.NewBuffer(snapshot)
 	decoder := labgob.NewDecoder(reader)
 	if decoder.Decode(&Data) != nil ||
 		decoder.Decode(&ResultMap) != nil ||
 		decoder.Decode(&CommitIndex) != nil ||
 		decoder.Decode(&CommitTerm) != nil ||
-		decoder.Decode(&OnCharge) != nil ||
-		decoder.Decode(&ExpCommitIndex) != nil {
+		decoder.Decode(&onCharge) != nil ||
+		decoder.Decode(&ci) != nil {
 		DPrintf("Decode snapshot error...")
 	}
 	return
