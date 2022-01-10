@@ -40,6 +40,45 @@
 ## 更新日志
 虽然到4B才想起来写...
 
+### 2022.1.10
+继续重构...  
+PASS Static  
+DEBUG JoinLeave
+
+#### getShardData(shard int)
+- 获取指定shard的data和resultMap
+
+#### sendSRHandler()
+- 发送ShardRequest的逻辑
+- 如果是自己负责，只要判断 onCharge >= QueryIndex ?
+- 如果是其他组负责，逐个server发送SR
+  - 如果全部回复ErrWrongOwner，认为非法(没救了)，尝试下一个QueryIndex
+  - 如果ErrWrongConfigIndex/ErrKilled/ErrNetwork，认为还有救
+    - 特别地，如果请求者ci较小，中断请求
+- 一旦收到1个OK的就可以，因为收到的Shard一定是共识过的结果
+
+#### ShardRequest()
+- killed check
+- args.ci == kv.ss.ci check
+- kv.ss.onCharge[args.Shard] == args.QueryIndex
+- 通过上述检查，即可返回shardData
+
+#### applyShard()
+- ShardLog Apply
+- 检查：log.ci == kv.ss.ci，检查不通过直接放弃
+- 若检查通过，更新data, resultMap, onCharge, readyShard
+
+#### 如何打回ci不匹配的
+- applyLoop()中, 对于ci不匹配的op, 直接不调用applyOne()
+- Get/PutAppend的等待loop中, 每次醒来检查args.ci与kv.ss.ci一致性,
+  不一致返回ErrWrongGroup
+- 打回过程不需要经过resultMap
+
+#### Deprecated
+- kv.ss.ready, kv.isReady()
+- kv.readOnCharge()
+- kv.ss.ExpCommitIndex
+
 ### 2022.1.6
 重构代码......
 #### queryConfigLoop()

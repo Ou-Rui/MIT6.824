@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"mymr/src/labgob"
+	"mymr/src/shardmaster"
 	"strconv"
 	"strings"
 )
@@ -38,9 +39,13 @@ type Op struct {
 	Value string
 
 	ConfigIndex int
-	Data        interface{}
+	Config      shardmaster.Config
+	Data        map[string]string
+	ResultMap   map[string]Result
+	Shard       int
 }
 
+//goland:noinspection GoCommentStart
 const (
 	OK                  = "OK"
 	ErrNoKey            = "ErrNoKey"
@@ -53,8 +58,11 @@ const (
 	ErrWrongOwner       = "ErrWrongOwner"
 	ErrWrongECI         = "ErrWrongECI"
 	ErrKilled           = "ErrKilled"
-	ErrContinue         = "ErrContinue"
-	ErrExit             = "ErrExit"
+
+	// sendSRHandler() Err
+	ErrNextConfig = "ErrNextConfig"
+	ErrRedo       = "ErrRedo"
+	ErrExit       = "ErrExit"
 )
 
 type Err string
@@ -114,7 +122,7 @@ type ShardReply struct {
 //type CommitReply struct {
 //	Term        int
 //	ConfigIndex int
-//	Err         Err
+//	Err
 //}
 
 func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
