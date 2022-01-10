@@ -140,15 +140,15 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 
 func DecodeSnapshot(snapshot []byte) (
 	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int,
-	onCharge []int, ci int) {
+	OnCharge []int, Ci int) {
 	reader := bytes.NewBuffer(snapshot)
 	decoder := labgob.NewDecoder(reader)
 	if decoder.Decode(&Data) != nil ||
 		decoder.Decode(&ResultMap) != nil ||
 		decoder.Decode(&CommitIndex) != nil ||
 		decoder.Decode(&CommitTerm) != nil ||
-		decoder.Decode(&onCharge) != nil ||
-		decoder.Decode(&ci) != nil {
+		decoder.Decode(&OnCharge) != nil ||
+		decoder.Decode(&Ci) != nil {
 		DPrintf("Decode snapshot error...")
 	}
 	return

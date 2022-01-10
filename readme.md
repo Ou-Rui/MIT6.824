@@ -42,8 +42,13 @@
 
 ### 2022.1.10
 继续重构...  
-PASS Static JoinLeave
-DEBUG Snapshot
+PASS Snapshot JoinLeave Static
+
+#### DEBUG
+- unlock写错括号，导致死锁
+- queryIndex应该从kv.ss.ci开始，而非kv.ss.ci-1
+  - 因为可能重启前就是自己负责
+- 修改了询问config 1的逻辑，configs[1] == nil 时询问
 
 #### getShardData(shard int)
 - 获取指定shard的data和resultMap
@@ -78,6 +83,7 @@ DEBUG Snapshot
 - kv.ss.ready, kv.isReady()
 - kv.readOnCharge()
 - kv.ss.ExpCommitIndex
+- kv.containsSnapshot()
 
 ### 2022.1.6
 重构代码......
