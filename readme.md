@@ -42,8 +42,8 @@
 
 ### 2022.1.10
 继续重构...  
-PASS Static  
-DEBUG JoinLeave
+PASS Static JoinLeave
+DEBUG Snapshot
 
 #### getShardData(shard int)
 - 获取指定shard的data和resultMap
