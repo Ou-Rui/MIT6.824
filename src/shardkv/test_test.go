@@ -450,7 +450,7 @@ func TestConcurrent2(t *testing.T) {
 			x := randstring(1)
 			ck1.Append(ka[i], x)
 			va[i] += x
-			time.Sleep(200 * time.Millisecond) // 50
+			time.Sleep(50 * time.Millisecond) // 50
 		}
 	}
 
@@ -506,6 +506,7 @@ func TestUnreliable1(t *testing.T) {
 	ck := cfg.makeClient()
 
 	cfg.join(0)
+	DPrintf("[Tester]: Join 0, config[1] = 0 \n")
 
 	n := 10
 	ka := make([]string, n)
@@ -515,10 +516,12 @@ func TestUnreliable1(t *testing.T) {
 		va[i] = randstring(5)
 		ck.Put(ka[i], va[i])
 	}
+	DPrintf("[Tester]: Put round 1 OK, config 1 \n")
 
 	cfg.join(1)
 	cfg.join(2)
 	cfg.leave(0)
+	DPrintf("[Tester]: Join 1+2, Leave 0, config[4] = 1+2 \n")
 
 	for ii := 0; ii < n*2; ii++ {
 		i := ii % n
@@ -527,9 +530,11 @@ func TestUnreliable1(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	DPrintf("[Tester]: Get Append round 2 OK, config 4 \n")
 
 	cfg.join(0)
 	cfg.leave(1)
+	DPrintf("[Tester]: Join 0, Leave 1, config[4] = 0+2 \n")
 
 	for ii := 0; ii < n*2; ii++ {
 		i := ii % n

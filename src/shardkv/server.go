@@ -413,21 +413,8 @@ func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 					kv.ss.configs[queryIndex] = &config
 				}
 
-				if kv.ss.ReadyShard[shard] {
-					DPrintf("[KV %v-%v]: shardRequestLoop for shard %v exit(0), already get Shard.. readyShard = %v",
-						kv.gid, kv.me, shard, kv.ss.ReadyShard)
-					kv.mu.Unlock()
-					return
-				}
-
 				err := kv.sendSRHandler(queryIndex, shard, ci)
 
-				if kv.ss.ReadyShard[shard] {
-					DPrintf("[KV %v-%v]: shardRequestLoop for shard %v exit(0), already get Shard.. readyShard = %v",
-						kv.gid, kv.me, shard, kv.ss.ReadyShard)
-					kv.mu.Unlock()
-					return
-				}
 				if err == OK {
 					DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v",
 						kv.gid, kv.me, shard, ci, queryIndex)
@@ -475,9 +462,6 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 	}
 	if gid == kv.gid {
 		if kv.ss.OnCharge[shard] >= queryIndex {
-			if kv.ss.ReadyShard[shard] {
-				return OK
-			}
 			op.Data, op.ResultMap = kv.getShardData(shard)
 			//go kv.rf.Start(op)
 			kv.mu.Unlock()
