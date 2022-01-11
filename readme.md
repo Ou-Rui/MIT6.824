@@ -41,9 +41,10 @@
 虽然到4B才想起来写...
 
 ### 2022.1.11
-PASS MissingChange  
-DEBUG Concurrent1
+PASS Concurrent1
 
+#### **DEBUG**
+- Config, Shard Log也要更新 CommitIndex, CommitTerm
 #### 被kill的server会被切断网络连接
 - 意味着被kill的server被调用SR RPC时，不会进入处理函数
 - 返回的错误不会是ErrKilled，而是 ok = false

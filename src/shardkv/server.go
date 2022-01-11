@@ -184,13 +184,26 @@ func (kv *ShardKV) applyLoop() {
 		if applyMsg.CommandValid {
 			// op apply
 			op, _ := applyMsg.Command.(Op)
-			if op.OpType == GetType || op.OpType == PutType || op.OpType == AppendType {
-				kv.applyGetPutAppend(applyMsg)
-			} else if op.OpType == ConfigType {
-				kv.applyConfig(op)
-			} else if op.OpType == ShardType {
-				kv.applyShard(op)
+			DPrintf("[KV %v-%v]: %v apply, op.ci = %v, curCi = %v",
+				kv.gid, kv.me, op.OpType, op.ConfigIndex, kv.ss.Ci)
+			id := op.Id
+			DPrintf("[KV %v-%v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
+				kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
+			if applyMsg.CommandIndex >= kv.CommitIndex {
+				kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
+				kv.CommitTerm = applyMsg.CommandTerm
+				if op.OpType == GetType || op.OpType == PutType || op.OpType == AppendType {
+					kv.applyGetPutAppend(op)
+				} else if op.OpType == ConfigType {
+					kv.applyConfig(op)
+				} else if op.OpType == ShardType {
+					kv.applyShard(op)
+				}
+			} else {
+				DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
+					kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex)
 			}
+
 		} else {
 			if applyMsg.CommandTerm == -10 {
 				DPrintf("[KV %v-%v]: toFollower apply", kv.gid, kv.me)
@@ -206,24 +219,12 @@ func (kv *ShardKV) applyLoop() {
 }
 
 // applyGetPutAppend, called by applyLoop()
-func (kv *ShardKV) applyGetPutAppend(applyMsg raft.ApplyMsg) {
-	op, _ := applyMsg.Command.(Op)
-	DPrintf("[KV %v-%v]: %v apply, op.ci = %v, curCi = %v",
-		kv.gid, kv.me, op.OpType, op.ConfigIndex, kv.ss.Ci)
+func (kv *ShardKV) applyGetPutAppend(op Op) {
 	id := op.Id
-	DPrintf("[KV %v-%v]: receive applyMsg, commitIndex = %v, commandIndex = %v, id = %v, status = %v",
-		kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex, id, kv.ResultMap[id].Status)
-	if applyMsg.CommandIndex >= kv.CommitIndex {
-		kv.CommitIndex = applyMsg.CommandIndex // update commitIndex, for stale command check
-		kv.CommitTerm = applyMsg.CommandTerm
-		if op.ConfigIndex == kv.ss.Ci && kv.ResultMap[id].Status == "" {
-			//if kv.ResultMap[id].Status == "" || kv.ResultMap[id].Status == Redo {
-			result := kv.applyOne(op) // apply
-			kv.ResultMap[id] = result
-		}
-	} else {
-		DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
-			kv.gid, kv.me, kv.CommitIndex, applyMsg.CommandIndex)
+	if op.ConfigIndex == kv.ss.Ci && kv.ResultMap[id].Status == "" {
+		//if kv.ResultMap[id].Status == "" || kv.ResultMap[id].Status == Redo {
+		result := kv.applyOne(op) // apply
+		kv.ResultMap[id] = result
 	}
 	_, requestIndex, clientId := parseRequestId(id)
 	go kv.removePrevious(requestIndex, clientId)
