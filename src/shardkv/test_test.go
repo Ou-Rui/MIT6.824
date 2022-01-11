@@ -333,15 +333,17 @@ func TestConcurrent1(t *testing.T) {
 	ck := cfg.makeClient()
 
 	cfg.join(0)
+	DPrintf("[Tester]: Join 0, config[1] = 0 \n")
 
 	n := 10
 	ka := make([]string, n)
 	va := make([]string, n)
 	for i := 0; i < n; i++ {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
-		va[i] = randstring(5)
+		va[i] = randstring(1)   // 5
 		ck.Put(ka[i], va[i])
 	}
+	DPrintf("[Tester]: Put round 1 OK, config 1 \n")
 
 	var done int32
 	ch := make(chan bool)
@@ -350,7 +352,7 @@ func TestConcurrent1(t *testing.T) {
 		defer func() { ch <- true }()
 		ck1 := cfg.makeClient()
 		for atomic.LoadInt32(&done) == 0 {
-			x := randstring(5)
+			x := randstring(1) // 5
 			ck1.Append(ka[i], x)
 			va[i] += x
 			time.Sleep(10 * time.Millisecond)
@@ -360,32 +362,43 @@ func TestConcurrent1(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go ff(i)
 	}
+	DPrintf("[Tester]: go 10 client \n")
 
 	time.Sleep(150 * time.Millisecond)
 	cfg.join(1)
+	DPrintf("[Tester]: Join 1, config[2] = 0+1 \n")
 	time.Sleep(500 * time.Millisecond)
 	cfg.join(2)
+	DPrintf("[Tester]: Join 2, config[3] = 0+1+2 \n")
 	time.Sleep(500 * time.Millisecond)
 	cfg.leave(0)
+	DPrintf("[Tester]: Leave 0, config[4] = 1+2 \n")
 
 	cfg.ShutdownGroup(0)
+	DPrintf("[Tester]: Shutdown Group 0 \n")
 	time.Sleep(100 * time.Millisecond)
 	cfg.ShutdownGroup(1)
+	DPrintf("[Tester]: Shutdown Group 1 \n")
 	time.Sleep(100 * time.Millisecond)
 	cfg.ShutdownGroup(2)
+	DPrintf("[Tester]: Shutdown Group 2 \n")
 
 	cfg.leave(2)
+	DPrintf("[Tester]: Leave 2, config[5] = 1 \n")
 
 	time.Sleep(100 * time.Millisecond)
 	cfg.StartGroup(0)
 	cfg.StartGroup(1)
 	cfg.StartGroup(2)
+	DPrintf("[Tester]: Restart All \n")
 
 	time.Sleep(100 * time.Millisecond)
 	cfg.join(0)
 	cfg.leave(1)
+	DPrintf("[Tester]: Join 0, Leave 1, config[7] = 0 \n")
 	time.Sleep(500 * time.Millisecond)
 	cfg.join(1)
+	DPrintf("[Tester]: Join 1, config[8] = 0+1 \n")
 
 	time.Sleep(1 * time.Second)
 

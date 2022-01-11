@@ -50,8 +50,8 @@ DEBUG Concurrent1
 - 所以 !ok 时，invalid也应该++
 - **以后Unreliable时可能会有问题？**
 
-#### applySnapshot()
-- applySnapshot时，要根据onCharge和ci生成readyShard
+#### Snapshot
+- kv.ss.ReadyShard也要进Snapshot持久化
 
 #### Deprecated
 - ShardRequest() Err: ErrKilled

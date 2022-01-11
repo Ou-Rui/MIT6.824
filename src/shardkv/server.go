@@ -41,7 +41,7 @@ type ShardState struct {
 	configs map[int]*shardmaster.Config // key: ci, value: config
 	Ci      int                         // latest config index
 	//ready      bool                        // all shard ready?
-	readyShard []bool // index: shard
+	ReadyShard []bool // index: shard
 	OnCharge   []int  // index: shard, value: configIndex
 	// expected commitIndex
 	// only when CommitIndex >= ExpCommitIndex[i], KV can offer shard i to other servers
@@ -277,22 +277,22 @@ func (kv *ShardKV) applySnapshot(applyMsg raft.ApplyMsg) {
 		kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 	snapshot, _ := applyMsg.Command.([]byte)
 	if len(snapshot) > 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci = DecodeSnapshot(snapshot)
-		if kv.ss.Ci > 0 {
-			for shard := range kv.ss.OnCharge {
-				if kv.ss.OnCharge[shard] == kv.ss.Ci {
-					kv.ss.readyShard[shard] = true
-				}
-			}
-		}
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard = DecodeSnapshot(snapshot)
+		//if kv.ss.Ci > 0 {
+		//	for shard := range kv.ss.OnCharge {
+		//		if kv.ss.OnCharge[shard] == kv.ss.Ci {
+		//			kv.ss.ReadyShard[shard] = true
+		//		}
+		//	}
+		//}
 	} else {
 		kv.Data = make(map[string]string)
 		kv.ResultMap = make(map[string]Result)
 		kv.CommitIndex = 0
 		kv.CommitTerm = 0
 	}
-	DPrintf("[KV %v-%v]: OnCharge = %v, ci = %v, readyShard = %v, newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-		kv.gid, kv.me, kv.ss.OnCharge, kv.ss.Ci, kv.ss.readyShard, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+	DPrintf("[KV %v-%v]: OnCharge = %v, ci = %v, ReadyShard = %v, newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+		kv.gid, kv.me, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 }
 
 // applyConfig, called by applyLoop()
@@ -319,24 +319,24 @@ func (kv *ShardKV) newConfigHandler() {
 		for shard := 0; shard < shardmaster.NShards; shard++ {
 			if config.Shards[shard] == kv.gid {
 				// responsible
-				kv.ss.readyShard[shard] = true
+				kv.ss.ReadyShard[shard] = true
 				kv.ss.OnCharge[shard] = maxInt(kv.ss.OnCharge[shard], 1)
 			} else {
-				kv.ss.readyShard[shard] = false
+				kv.ss.ReadyShard[shard] = false
 			}
 		}
 	} else {
 		// new config
 		for shard := 0; shard < shardmaster.NShards; shard++ {
-			kv.ss.readyShard[shard] = false
+			kv.ss.ReadyShard[shard] = false
 			if config.Shards[shard] == kv.gid {
 				// responsible
 				go kv.shardRequestLoop(kv.ss.Ci, shard)
 			}
 		}
 	}
-	DPrintf("[KV %v-%v]: newConfigHandler, config = %v, readyShard = %v, onCharge = %v",
-		kv.gid, kv.me, kv.ss.configs[kv.ss.Ci], kv.ss.readyShard, kv.ss.OnCharge)
+	DPrintf("[KV %v-%v]: newConfigHandler, config = %v, ReadyShard = %v, onCharge = %v",
+		kv.gid, kv.me, kv.ss.configs[kv.ss.Ci], kv.ss.ReadyShard, kv.ss.OnCharge)
 }
 
 func (kv *ShardKV) applyShard(op Op) {
@@ -364,9 +364,9 @@ func (kv *ShardKV) applyShard(op Op) {
 		kv.ResultMap[key] = newResult
 	}
 	kv.ss.OnCharge[op.Shard] = kv.ss.Ci
-	kv.ss.readyShard[op.Shard] = true
-	DPrintf("[KV %v-%v]: shard %v apply done! onCharge = %v, readyShard = %v",
-		kv.gid, kv.me, op.Shard, kv.ss.OnCharge, kv.ss.readyShard)
+	kv.ss.ReadyShard[op.Shard] = true
+	DPrintf("[KV %v-%v]: shard %v apply done! onCharge = %v, ReadyShard = %v",
+		kv.gid, kv.me, op.Shard, kv.ss.OnCharge, kv.ss.ReadyShard)
 }
 
 // shardRequestLoop, called by newConfigHandler
@@ -383,7 +383,7 @@ func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 			return
 		}
 		// unready && responsible
-		if !kv.ss.readyShard[shard] && kv.ss.configs[ci].Shards[shard] == kv.gid {
+		if !kv.ss.ReadyShard[shard] && kv.ss.configs[ci].Shards[shard] == kv.gid {
 			// index of config for shard i , start from curIndex-1, decrease..
 			queryIndex := ci
 			// queryIndex loop
@@ -650,6 +650,7 @@ func (kv *ShardKV) generateSnapshot() []byte {
 	encoder.Encode(kv.CommitTerm)
 	encoder.Encode(kv.ss.OnCharge)
 	encoder.Encode(kv.ss.Ci)
+	encoder.Encode(kv.ss.ReadyShard)
 
 	data := writer.Bytes()
 	DPrintf("[KV %v-%v]: snapshot = %v", kv.gid, kv.me, data)
@@ -673,9 +674,9 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	}
 
 	shard := key2shard(args.Key)
-	if !kv.ss.readyShard[shard] {
-		DPrintf("[KV %v-%v]: shard %v NotReady yet.. readyShard = %v",
-			kv.gid, kv.me, shard, kv.ss.readyShard)
+	if !kv.ss.ReadyShard[shard] {
+		DPrintf("[KV %v-%v]: shard %v NotReady yet.. ReadyShard = %v",
+			kv.gid, kv.me, shard, kv.ss.ReadyShard)
 		reply.Err = ErrNotReady
 		//DPrintf("[KV %v-%v]: Get unlock", kv.gid, kv.me)
 		return
@@ -776,9 +777,9 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 
 	shard := key2shard(args.Key)
-	if !kv.ss.readyShard[shard] {
-		DPrintf("[KV %v-%v]: shard %v NotReady yet.. readyShard = %v",
-			kv.gid, kv.me, shard, kv.ss.readyShard)
+	if !kv.ss.ReadyShard[shard] {
+		DPrintf("[KV %v-%v]: shard %v NotReady yet.. ReadyShard = %v",
+			kv.gid, kv.me, shard, kv.ss.ReadyShard)
 		reply.Err = ErrNotReady
 		//DPrintf("[KV %v-%v]: PutAppend unlock", kv.gid, kv.me)
 		return
@@ -935,7 +936,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.ss = ShardState{
 		Ci:         0,
 		configs:    make(map[int]*shardmaster.Config),
-		readyShard: make([]bool, shardmaster.NShards),
+		ReadyShard: make([]bool, shardmaster.NShards),
 		OnCharge:   make([]int, shardmaster.NShards),
 	}
 	for i := range kv.ss.OnCharge {
@@ -944,7 +945,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci = DecodeSnapshot(snapshot)
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard = DecodeSnapshot(snapshot)
 		DPrintf("[KV %v-%v] read from snapshot, onCharge = %v, ci = %v, data = %v, commitIndex = %v",
 			kv.gid, kv.me, kv.ss.OnCharge, kv.ss.Ci, kv.Data, kv.CommitIndex)
 	}
