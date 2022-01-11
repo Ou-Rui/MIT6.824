@@ -40,6 +40,22 @@
 ## 更新日志
 虽然到4B才想起来写...
 
+### 2022.1.11
+PASS MissingChange  
+DEBUG Concurrent1
+
+#### 被kill的server会被切断网络连接
+- 意味着被kill的server被调用SR RPC时，不会进入处理函数
+- 返回的错误不会是ErrKilled，而是 ok = false
+- 所以 !ok 时，invalid也应该++
+- **以后Unreliable时可能会有问题？**
+
+#### applySnapshot()
+- applySnapshot时，要根据onCharge和ci生成readyShard
+
+#### Deprecated
+- ShardRequest() Err: ErrKilled
+
 ### 2022.1.10
 继续重构...  
 PASS Snapshot JoinLeave Static

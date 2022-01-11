@@ -224,7 +224,7 @@ func TestSnapshot(t *testing.T) {
 }
 
 func TestMissChange(t *testing.T) {
-	fmt.Printf("Test: servers miss configuration changes...\n")
+	fmt.Printf("[Tester]: servers miss configuration changes...\n")
 
 	cfg := make_config(t, 3, false, 1000)
 	defer cfg.cleanup()
@@ -232,6 +232,7 @@ func TestMissChange(t *testing.T) {
 	ck := cfg.makeClient()
 
 	cfg.join(0)
+	fmt.Printf("[Tester]: Join 0, config[1] = 0. \n")
 
 	n := 10
 	ka := make([]string, n)
@@ -244,16 +245,20 @@ func TestMissChange(t *testing.T) {
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
+	fmt.Printf("[Tester]: Get Put round 1 OK, config 1\n")
 
 	cfg.join(1)
+	fmt.Printf("[Tester]: Join 1, config[2] = 0+1. \n")
 
 	cfg.ShutdownServer(0, 0)
 	cfg.ShutdownServer(1, 0)
 	cfg.ShutdownServer(2, 0)
+	fmt.Printf("[Tester]: shutdown server 0 in all group. \n")
 
 	cfg.join(2)
 	cfg.leave(1)
 	cfg.leave(0)
+	fmt.Printf("[Tester]: Join 2, leave 0+1, config[5] = 2. \n")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -261,8 +266,10 @@ func TestMissChange(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	fmt.Printf("[Tester]: Get Append round 2 OK, config 5 \n")
 
 	cfg.join(1)
+	fmt.Printf("[Tester]: Join 1, config[6] = 1+2. \n")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -270,10 +277,12 @@ func TestMissChange(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	fmt.Printf("[Tester]: Get Append round 3 OK, config 5 \n")
 
 	cfg.StartServer(0, 0)
 	cfg.StartServer(1, 0)
 	cfg.StartServer(2, 0)
+	fmt.Printf("[Tester]: restart server 0 in all group. \n")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -281,15 +290,18 @@ func TestMissChange(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	fmt.Printf("[Tester]: Get Append round 4 OK, config 5 \n")
 
 	time.Sleep(2 * time.Second)
 
 	cfg.ShutdownServer(0, 1)
 	cfg.ShutdownServer(1, 1)
 	cfg.ShutdownServer(2, 1)
+	fmt.Printf("[Tester]: shutdown server 1 in all group. \n")
 
 	cfg.join(0)
 	cfg.leave(2)
+	fmt.Printf("[Tester]: Join 0, leave 2, config[8] = 0+1. \n")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
@@ -297,14 +309,17 @@ func TestMissChange(t *testing.T) {
 		ck.Append(ka[i], x)
 		va[i] += x
 	}
+	fmt.Printf("[Tester]: Get Append round 5 OK, config 8 \n")
 
 	cfg.StartServer(0, 1)
 	cfg.StartServer(1, 1)
 	cfg.StartServer(2, 1)
+	fmt.Printf("[Tester]: restart server 1 in all group. \n")
 
 	for i := 0; i < n; i++ {
 		check(t, ck, ka[i], va[i])
 	}
+	fmt.Printf("[Tester]: Get round 6 OK, config 8 \n")
 
 	fmt.Printf("  ... Passed\n")
 }

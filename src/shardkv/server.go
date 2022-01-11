@@ -195,20 +195,7 @@ func (kv *ShardKV) applyLoop() {
 			if applyMsg.CommandTerm == -10 {
 				DPrintf("[KV %v-%v]: toFollower apply", kv.gid, kv.me)
 			} else {
-				// snapshot apply
-				DPrintf("[KV %v-%v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
-				snapshot, _ := applyMsg.Command.([]byte)
-				if len(snapshot) > 0 {
-					kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci = DecodeSnapshot(snapshot)
-				} else {
-					kv.Data = make(map[string]string)
-					kv.ResultMap = make(map[string]Result)
-					kv.CommitIndex = 0
-					kv.CommitTerm = 0
-				}
-				DPrintf("[KV %v-%v]: newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
-					kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+				kv.applySnapshot(applyMsg)
 			}
 		}
 		kv.mu.Unlock()
@@ -282,6 +269,30 @@ func (kv *ShardKV) applyOne(op Op) (result Result) {
 	DPrintf("[KV %v-%v]: applyOne, id = %v, key = %v, value = %v, newValue = %v",
 		kv.gid, kv.me, op.Id, op.Key, op.Value, kv.Data[op.Key])
 	return
+}
+
+func (kv *ShardKV) applySnapshot(applyMsg raft.ApplyMsg) {
+	// snapshot apply
+	DPrintf("[KV %v-%v]: snapshot apply, curData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+		kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
+	snapshot, _ := applyMsg.Command.([]byte)
+	if len(snapshot) > 0 {
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci = DecodeSnapshot(snapshot)
+		if kv.ss.Ci > 0 {
+			for shard := range kv.ss.OnCharge {
+				if kv.ss.OnCharge[shard] == kv.ss.Ci {
+					kv.ss.readyShard[shard] = true
+				}
+			}
+		}
+	} else {
+		kv.Data = make(map[string]string)
+		kv.ResultMap = make(map[string]Result)
+		kv.CommitIndex = 0
+		kv.CommitTerm = 0
+	}
+	DPrintf("[KV %v-%v]: OnCharge = %v, ci = %v, readyShard = %v, newData = %v, resultMap = %v, commitIndex = %v, commitTerm = %v",
+		kv.gid, kv.me, kv.ss.OnCharge, kv.ss.Ci, kv.ss.readyShard, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 }
 
 // applyConfig, called by applyLoop()
@@ -493,9 +504,9 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 				}
 				return OK
 			} else if reply.Err == ErrKilled {
-				//DPrintf("[KV %v-%v]: shard %v Request failed, %v.. invalid = %v",
-				//	kv.gid, kv.me, shard, reply.Err, invalid)
-				//invalid++
+				invalid++
+				DPrintf("[KV %v-%v]: shard %v Request failed, %v.. invalid = %v",
+					kv.gid, kv.me, shard, reply.Err, invalid)
 			} else if reply.Err == ErrWrongConfigIndex {
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v, reply.ci = %v, kv.ci = %v ",
 					kv.gid, kv.me, shard, reply.Err, reply.ConfigIndex, kv.ss.Ci)
@@ -505,12 +516,15 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 					// wait...
 				}
 			} else if reply.Err == ErrWrongOwner {
+				invalid++
 				DPrintf("[KV %v-%v]: shard %v Request failed, %v.. invalid = %v",
 					kv.gid, kv.me, shard, reply.Err, invalid)
-				invalid++
 			}
 		} else {
 			// network failed
+			invalid++
+			DPrintf("[KV %v-%v]: shard %v Request failed, network failed.. invalid = %v",
+				kv.gid, kv.me, shard, invalid)
 		}
 	} // query group[gid] servers loop End
 	if invalid != len(servers) {
