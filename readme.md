@@ -33,15 +33,14 @@
 - ci与client匹配，OnCharge[shard] == ci
 
 ## TODO
-- 发送，接收 ShardRequest RPC 的逻辑
-- Shard Log的Start与Apply
-- 打回不匹配的 Request
+- Unreliable时，QueryConfigLoop中的kv.mck.Query会永久阻塞
 
 ## 更新日志
 虽然到4B才想起来写...
 
 ### 2022.1.11
-PASS Concurrent1/2
+PASS Concurrent1/2  
+DEBUG Unreliable1
 
 #### **DEBUG**
 - Config, Shard Log也要更新 CommitIndex, CommitTerm
