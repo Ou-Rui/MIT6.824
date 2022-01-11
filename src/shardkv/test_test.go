@@ -340,7 +340,7 @@ func TestConcurrent1(t *testing.T) {
 	va := make([]string, n)
 	for i := 0; i < n; i++ {
 		ka[i] = strconv.Itoa(i) // ensure multiple shards
-		va[i] = randstring(1)   // 5
+		va[i] = randstring(5)   // 5
 		ck.Put(ka[i], va[i])
 	}
 	DPrintf("[Tester]: Put round 1 OK, config 1 \n")
@@ -352,7 +352,7 @@ func TestConcurrent1(t *testing.T) {
 		defer func() { ch <- true }()
 		ck1 := cfg.makeClient()
 		for atomic.LoadInt32(&done) == 0 {
-			x := randstring(1) // 5
+			x := randstring(5) // 5
 			ck1.Append(ka[i], x)
 			va[i] += x
 			time.Sleep(10 * time.Millisecond)
@@ -429,6 +429,7 @@ func TestConcurrent2(t *testing.T) {
 	cfg.join(1)
 	cfg.join(0)
 	cfg.join(2)
+	DPrintf("[Tester]: Join 0+1+2, config[3] = 0+1+2 \n")
 
 	n := 10
 	ka := make([]string, n)
@@ -438,6 +439,7 @@ func TestConcurrent2(t *testing.T) {
 		va[i] = randstring(1)
 		ck.Put(ka[i], va[i])
 	}
+	DPrintf("[Tester]: Put round 1, OK \n")
 
 	var done int32
 	ch := make(chan bool)
@@ -448,7 +450,7 @@ func TestConcurrent2(t *testing.T) {
 			x := randstring(1)
 			ck1.Append(ka[i], x)
 			va[i] += x
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond) // 50
 		}
 	}
 
@@ -456,24 +458,30 @@ func TestConcurrent2(t *testing.T) {
 		ck1 := cfg.makeClient()
 		go ff(i, ck1)
 	}
+	DPrintf("[Tester]: go 10 clients \n")
 
 	cfg.leave(0)
 	cfg.leave(2)
+	DPrintf("[Tester]: Leave 0+2, config[5] = 1 \n")
 	time.Sleep(3000 * time.Millisecond)
 	cfg.join(0)
 	cfg.join(2)
 	cfg.leave(1)
+	DPrintf("[Tester]: Join 0+2, Leave 1, config[8] = 0+2 \n")
 	time.Sleep(3000 * time.Millisecond)
 	cfg.join(1)
 	cfg.leave(0)
 	cfg.leave(2)
+	DPrintf("[Tester]: Join 1, Leave 0+2, config[11] = 1 \n")
 	time.Sleep(3000 * time.Millisecond)
 
 	cfg.ShutdownGroup(1)
 	cfg.ShutdownGroup(2)
+	DPrintf("[Tester]: Shutdown Group 1+2 \n")
 	time.Sleep(1000 * time.Millisecond)
 	cfg.StartGroup(1)
 	cfg.StartGroup(2)
+	DPrintf("[Tester]: Restart Group 1+2 \n")
 
 	time.Sleep(2 * time.Second)
 

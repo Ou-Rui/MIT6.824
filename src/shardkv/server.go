@@ -110,7 +110,7 @@ func (kv *ShardKV) queryConfigLoop() {
 		// query latest config by default
 		query := -1
 		// if kv doesn't contain any config, must get config[1] first
-		if kv.ss.configs[1] == nil {
+		if kv.ss.Ci == 0 || kv.ss.configs[1] == nil {
 			query = 1
 		}
 		kv.mu.Unlock()
@@ -347,6 +347,11 @@ func (kv *ShardKV) applyShard(op Op) {
 		DPrintf("[KV %v-%v]: ci error, discard shard %v..", kv.gid, kv.me, op.Shard)
 		return
 	}
+	if kv.ss.ReadyShard[op.Shard] {
+		DPrintf("[KV %v-%v]: shard %v already applied.. readyShard = %v",
+			kv.gid, kv.me, op.Shard, kv.ss.ReadyShard)
+		return
+	}
 	data := op.Data
 	resultMap := op.ResultMap
 	DPrintf("[KV %v-%v]: shard %v apply, data = %v, resultMap = %v",
@@ -408,8 +413,21 @@ func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 					kv.ss.configs[queryIndex] = &config
 				}
 
+				if kv.ss.ReadyShard[shard] {
+					DPrintf("[KV %v-%v]: shardRequestLoop for shard %v exit(0), already get Shard.. readyShard = %v",
+						kv.gid, kv.me, shard, kv.ss.ReadyShard)
+					kv.mu.Unlock()
+					return
+				}
+
 				err := kv.sendSRHandler(queryIndex, shard, ci)
 
+				if kv.ss.ReadyShard[shard] {
+					DPrintf("[KV %v-%v]: shardRequestLoop for shard %v exit(0), already get Shard.. readyShard = %v",
+						kv.gid, kv.me, shard, kv.ss.ReadyShard)
+					kv.mu.Unlock()
+					return
+				}
 				if err == OK {
 					DPrintf("[KV %v-%v]: shard %v for config%v return OK!, queryIndex = %v",
 						kv.gid, kv.me, shard, ci, queryIndex)
@@ -457,6 +475,9 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 	}
 	if gid == kv.gid {
 		if kv.ss.OnCharge[shard] >= queryIndex {
+			if kv.ss.ReadyShard[shard] {
+				return OK
+			}
 			op.Data, op.ResultMap = kv.getShardData(shard)
 			//go kv.rf.Start(op)
 			kv.mu.Unlock()
@@ -486,6 +507,9 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int) Err {
 		}
 		if ok {
 			if reply.Err == OK {
+				if kv.ss.ReadyShard[shard] {
+					return OK
+				}
 				DPrintf("[KV %v-%v]: shard %v Request ok, reply = %v",
 					kv.gid, kv.me, shard, reply)
 				op.Data = reply.Data

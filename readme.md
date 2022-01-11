@@ -41,10 +41,14 @@
 虽然到4B才想起来写...
 
 ### 2022.1.11
-PASS Concurrent1
+PASS Concurrent1/2
 
 #### **DEBUG**
 - Config, Shard Log也要更新 CommitIndex, CommitTerm
+- 开局询问config[0]的逻辑修正，第一次问到的时候可能leader还没选出来，
+  导致log无法Start
+- 不Apply已经OnCharge的ShardLog
+
 #### 被kill的server会被切断网络连接
 - 意味着被kill的server被调用SR RPC时，不会进入处理函数
 - 返回的错误不会是ErrKilled，而是 ok = false
