@@ -59,9 +59,10 @@ const (
 	ErrKilled           = "ErrKilled"
 
 	// sendSRHandler() Err
-	ErrNextConfig = "ErrNextConfig"
-	ErrRedo       = "ErrRedo"
-	ErrExit       = "ErrExit"
+	ErrNextConfig  = "ErrNextConfig"
+	ErrNetworkRedo = "ErrNetworkRedo"
+	ErrRedo        = "ErrRedo"
+	ErrExit        = "ErrExit"
 )
 
 type Err string

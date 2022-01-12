@@ -33,10 +33,22 @@
 - ci与client匹配，OnCharge[shard] == ci
 
 ## TODO
-- Unreliable时，QueryConfigLoop中的kv.mck.Query会永久阻塞
+- Challenge! Garbage Collection
+  - 收到有效的Shard后，回发确认RPC
+  - 问题：如何确保确认RPC送达
 
 ## 更新日志
 虽然到4B才想起来写...
+
+### 2022.1.12
+PASS 4B!!!  500次
+
+#### **DEBUG**
+- 修正了ShardMaster AlreadyDone的逻辑
+- sm的config不一致，将计算config提前到rf.Start()之前
+- 无法区分Killed和Network Error
+  - 暂时方案：网络错误重复**10**次才觉得没戏
+  - magic number...
 
 ### 2022.1.11
 PASS Concurrent1/2  

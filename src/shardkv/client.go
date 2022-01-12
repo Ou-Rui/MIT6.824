@@ -80,12 +80,12 @@ func (ck *Clerk) Get(key string) string {
 	defer ck.mu.Unlock()
 	id := fmt.Sprintf("%v+%v+%v", "Get", ck.requestIndex, ck.clientId)
 
-	args := GetArgs{}
-	args.Key = key
-	args.Id = id
-
 	for {
-		args.ConfigIndex = ck.config.Num
+		args := GetArgs{
+			Key:         key,
+			Id:          id,
+			ConfigIndex: ck.config.Num,
+		}
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
@@ -131,15 +131,14 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	ck.mu.Lock()
 	defer ck.mu.Unlock()
 	id := fmt.Sprintf("%v+%v+%v", op, ck.requestIndex, ck.clientId)
-
-	args := PutAppendArgs{}
-	args.Key = key
-	args.Value = value
-	args.Op = op
-	args.Id = id
-
 	for {
-		args.ConfigIndex = ck.config.Num
+		args := PutAppendArgs{
+			Key:         key,
+			Value:       value,
+			Op:          op,
+			Id:          id,
+			ConfigIndex: ck.config.Num,
+		}
 		shard := key2shard(key)
 		gid := ck.config.Shards[shard]
 		if servers, ok := ck.config.Groups[gid]; ok {
