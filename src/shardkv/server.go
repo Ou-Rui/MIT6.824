@@ -128,12 +128,12 @@ func (kv *ShardKV) queryConfigLoop() {
 				kv.gid, kv.me, config.Num, kv.ss.Ci)
 		} else if config.Num == kv.ss.Ci {
 			// common situation, do nothing
-			for shard := 0; shard < shardmaster.NShards; shard++ {
-				if config.Shards[shard] == kv.gid && !kv.ss.ReadyShard[shard] {
-					// responsible and not ready
-					go kv.shardRequestLoop(kv.ss.Ci, shard)
-				}
-			}
+			//for shard := 0; shard < shardmaster.NShards; shard++ {
+			//	if config.Shards[shard] == kv.gid && !kv.ss.ReadyShard[shard] {
+			//		// responsible and not ready
+			//		go kv.shardRequestLoop(kv.ss.Ci, shard)
+			//	}
+			//}
 		} else {
 			DPrintf("[KV %v-%v]: getNewConfig = %v", kv.gid, kv.me, config)
 			op := Op{
@@ -487,7 +487,7 @@ func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 		}
 		kv.mu.Unlock()
 		//DPrintf("[KV %v-%v]: shardRequestLoop unlock", kv.gid, kv.me)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
