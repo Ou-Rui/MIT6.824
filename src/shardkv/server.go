@@ -4,6 +4,7 @@ package shardkv
 import (
 	"bytes"
 	"log"
+	"math"
 	"mymr/src/labrpc"
 	"mymr/src/shardmaster"
 	"sync/atomic"
@@ -97,8 +98,10 @@ func (kv *ShardKV) getShardData(shard int) (data map[string]string, resultMap ma
 // queryConfigLoop
 // query for latest Config by kv.mck.Query(-1) every 100ms
 func (kv *ShardKV) queryConfigLoop() {
+	i := 0
 	for {
 		kv.mu.Lock()
+
 		//DPrintf("[KV %v-%v]: query lock1", kv.gid, kv.me)
 		if kv.killed() {
 			kv.mu.Unlock()
@@ -128,12 +131,15 @@ func (kv *ShardKV) queryConfigLoop() {
 				kv.gid, kv.me, config.Num, kv.ss.Ci)
 		} else if config.Num == kv.ss.Ci {
 			// common situation, do nothing
-			//for shard := 0; shard < shardmaster.NShards; shard++ {
-			//	if config.Shards[shard] == kv.gid && !kv.ss.ReadyShard[shard] {
-			//		// responsible and not ready
-			//		go kv.shardRequestLoop(kv.ss.Ci, shard)
-			//	}
-			//}
+			i = (i + 1) % 20
+			if i == 0 {
+				for shard := 0; shard < shardmaster.NShards; shard++ {
+					if config.Shards[shard] == kv.gid && !kv.ss.ReadyShard[shard] {
+						// responsible and not ready
+						go kv.shardRequestLoop(kv.ss.Ci, shard)
+					}
+				}
+			}
 		} else {
 			DPrintf("[KV %v-%v]: getNewConfig = %v", kv.gid, kv.me, config)
 			op := Op{
@@ -581,16 +587,21 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int, networkRedo *int)
 				kv.gid, kv.me, shard, networkErrorCnt)
 		}
 	} // query group[gid] servers loop End
-
-	if networkErrorCnt > 0 && wrongOwnerCnt+networkErrorCnt == len(servers) {
-		*networkRedo--
-	}
-	if wrongOwnerCnt == len(servers) || (wrongOwnerCnt+networkErrorCnt == len(servers) && *networkRedo < 0) {
+	half := int(math.Ceil(float64(len(servers)) / 2))
+	if wrongOwnerCnt >= half {
 		return ErrNextConfig
 	}
-	DPrintf("[KV %v-%v]: shard %v Request failed, wrongOwnerCnt = %v, networkErrorCnt = %v, networkRedo = %v",
-		kv.gid, kv.me, shard, wrongOwnerCnt, networkErrorCnt, *networkRedo)
 	return ErrRedo
+
+	//if networkErrorCnt > 0 && wrongOwnerCnt+networkErrorCnt == len(servers) {
+	//	*networkRedo--
+	//}
+	//if wrongOwnerCnt == len(servers) || (wrongOwnerCnt+networkErrorCnt == len(servers) && *networkRedo < 0) {
+	//	return ErrNextConfig
+	//}
+	//DPrintf("[KV %v-%v]: shard %v Request failed, wrongOwnerCnt = %v, networkErrorCnt = %v, networkRedo = %v",
+	//	kv.gid, kv.me, shard, wrongOwnerCnt, networkErrorCnt, *networkRedo)
+	//return ErrRedo
 
 }
 
