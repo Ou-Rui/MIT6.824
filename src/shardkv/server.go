@@ -41,11 +41,9 @@ type ShardState struct {
 	configs map[int]*shardmaster.Config // key: ci, value: config
 	Ci      int                         // latest config index
 	//ready      bool                        // all shard ready?
-	ReadyShard []bool // index: shard
-	OnCharge   []int  // index: shard, value: configIndex
-	// expected commitIndex
-	// only when CommitIndex >= ExpCommitIndex[i], KV can offer shard i to other servers
-	//ExpCommitIndex []int
+	ReadyShard   []bool // index: shard
+	OnCharge     []int  // index: shard, value: configIndex
+	DeletedShard []int  // index: shard, value: configIndex
 }
 
 type ShardKV struct {
@@ -209,6 +207,8 @@ func (kv *ShardKV) applyLoop() {
 					kv.applyConfig(op)
 				} else if op.OpType == ShardType {
 					kv.applyShard(op)
+				} else if op.OpType == ShardGcType {
+					kv.applyGc(op)
 				}
 			} else {
 				DPrintf("[KV %v-%v]: already Applied Command.. commitIndex = %v, applyIndex = %v",
@@ -289,7 +289,7 @@ func (kv *ShardKV) applySnapshot(applyMsg raft.ApplyMsg) {
 		kv.gid, kv.me, kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm)
 	snapshot, _ := applyMsg.Command.([]byte)
 	if len(snapshot) > 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard = DecodeSnapshot(snapshot)
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard, kv.ss.DeletedShard = DecodeSnapshot(snapshot)
 	} else {
 		kv.Data = make(map[string]string)
 		kv.ResultMap = make(map[string]Result)
@@ -377,6 +377,45 @@ func (kv *ShardKV) applyShard(op Op) {
 	kv.ss.ReadyShard[op.Shard] = true
 	DPrintf("[KV %v-%v]: shard %v apply done! onCharge = %v, ReadyShard = %v",
 		kv.gid, kv.me, op.Shard, kv.ss.OnCharge, kv.ss.ReadyShard)
+
+	if op.Gid != kv.me {
+		go kv.sendGcHandler(op.Gid, op.Shard, op.DeleteCi)
+	}
+}
+
+func (kv *ShardKV) applyGc(op Op) {
+	shard := op.Shard
+
+	if kv.ss.ReadyShard[shard] || kv.ss.OnCharge[shard] > op.DeleteCi {
+		DPrintf("[KV %v-%v]: refuse to delete shard %v, op.DeleteCi = %v, ReadyShard = %v, OnCharge = %v",
+			kv.gid, kv.me, shard, op.DeleteCi, kv.ss.ReadyShard, kv.ss.OnCharge)
+		return
+	}
+
+	// duplicate check
+	if kv.ss.DeletedShard[shard] >= op.DeleteCi {
+		DPrintf("[KV %v-%v]: shard %v already deleted.. DeletedShard = %v, op.DeleteCi = %v",
+			kv.gid, kv.me, shard, kv.ss.DeletedShard, op.DeleteCi)
+		return
+	}
+
+	kv.ss.DeletedShard[shard] = op.DeleteCi
+	// do Garbage Collection
+	for key, _ := range kv.Data {
+		keyShard := key2shard(key)
+		if keyShard == shard {
+			delete(kv.Data, key)
+		}
+	}
+	//for key, _ := range kv.ResultMap {
+	//	keyShard := key2shard(key)
+	//	if keyShard == shard {
+	//		delete(kv.ResultMap, key)
+	//	}
+	//}
+	DPrintf("[KV %v-%v]: shard %v deleted!! DeletedShard = %v",
+		kv.gid, kv.me, shard, kv.ss.DeletedShard)
+	return
 }
 
 // shardRequestLoop, called by newConfigHandler
@@ -384,7 +423,7 @@ func (kv *ShardKV) applyShard(op Op) {
 func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 	for {
 		kv.mu.Lock()
-		DPrintf("[KV %v-%v]: shardRequestLoop lock1", kv.gid, kv.me)
+		//DPrintf("[KV %v-%v]: shardRequestLoop lock1", kv.gid, kv.me)
 		if kv.killed() || kv.ss.Ci != ci {
 			DPrintf("[KV %v-%v]: shardRequestLoop exit(-1), curConfig.Num = %v, target = %v",
 				kv.gid, kv.me, kv.ss.Ci, ci)
@@ -405,7 +444,7 @@ func (kv *ShardKV) shardRequestLoop(ci int, shard int) {
 					//DPrintf("[KV %v-%v]: shardRequestLoop unlock", kv.gid, kv.me)
 					config := kv.mck.Query(queryIndex)
 					kv.mu.Lock()
-					DPrintf("[KV %v-%v]: shardRequestLoop lock2", kv.gid, kv.me)
+					//DPrintf("[KV %v-%v]: shardRequestLoop lock2", kv.gid, kv.me)
 					if kv.killed() || kv.ss.Ci != ci {
 						DPrintf("[KV %v-%v]: shardRequestLoop for shard %v exit(-1), curConfig.Num = %v, target = %v",
 							kv.gid, kv.me, shard, kv.ss.Ci, ci)
@@ -460,15 +499,19 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int, networkRedo *int)
 	servers := config.Groups[gid]
 	DPrintf("[KV %v-%v]: in config %v, group %v is responsible for shard %v, config = %v",
 		kv.gid, kv.me, queryIndex, gid, shard, config)
-	// responsible server is myself...
+
 	op := Op{
 		OpType:      ShardType,
 		ConfigIndex: curCi,
 		Shard:       shard,
+		Gid:         gid,
+		DeleteCi:    queryIndex,
 	}
+	// responsible server is myself...
 	if gid == kv.gid {
 		if kv.ss.OnCharge[shard] >= queryIndex {
 			op.Data, op.ResultMap = kv.getShardData(shard)
+
 			//go kv.rf.Start(op)
 			kv.mu.Unlock()
 			//DPrintf("[KV %v-%v]: sendSRHandler unlock", kv.gid, kv.me)
@@ -505,7 +548,6 @@ func (kv *ShardKV) sendSRHandler(queryIndex, shard, curCi int, networkRedo *int)
 					kv.gid, kv.me, shard, reply)
 				op.Data = reply.Data
 				op.ResultMap = reply.ResultMap
-				//go kv.rf.Start(op)
 				kv.mu.Unlock()
 				//DPrintf("[KV %v-%v]: sendSRHandler unlock", kv.gid, kv.me)
 				_, _, isLeader := kv.rf.Start(op)
@@ -585,13 +627,6 @@ func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
 	kv.mu.Lock()
 	//DPrintf("[KV %v-%v]: ShardRequest lock", kv.gid, kv.me)
 	defer kv.mu.Unlock()
-	if kv.killed() {
-		DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, Error, I'm killed..",
-			kv.gid, kv.me, args.Gid, args.Server)
-		reply.Err = ErrKilled
-		//DPrintf("[KV %v-%v]: ShardRequest unlock", kv.gid, kv.me)
-		return
-	}
 
 	// configIndex check, maybe too strict??
 	if args.ConfigIndex != kv.ss.Ci {
@@ -618,6 +653,113 @@ func (kv *ShardKV) ShardRequest(args *ShardArgs, reply *ShardReply) {
 	DPrintf("[KV %v-%v]: ShardRequest from KV %v-%v, OK, shard = %v, ci = %v, queryIndex = %v",
 		kv.gid, kv.me, args.Gid, args.Server, args.Shard, kv.ss.Ci, args.QueryIndex)
 	//DPrintf("[KV %v-%v]: ShardRequest unlock", kv.gid, kv.me)
+	return
+}
+
+func (kv *ShardKV) sendGcHandler(gid, shard, deleteCi int) {
+	kv.mu.Lock()
+	if kv.ss.configs[deleteCi] == nil {
+		kv.mu.Unlock()
+		config := kv.mck.Query(deleteCi)
+		kv.mu.Lock()
+		kv.ss.configs[deleteCi] = &config
+	}
+	config := kv.ss.configs[deleteCi]
+	servers := config.Groups[gid]
+	// forever loop
+	for {
+		for _, server := range servers {
+			ok, reply := kv.sendGcRequest(server, shard, deleteCi)
+			if ok {
+				if reply.Err == OK || reply.Err == ErrAlreadyDone {
+					DPrintf("[KV %v-%v]: sendGcHandler return %v, deleteCi = %v, shard = %v,",
+						kv.gid, kv.me, reply.Err, deleteCi, shard)
+					kv.mu.Unlock()
+					return
+				} else if reply.Err == ErrWrongLeader {
+					// ask next server
+				}
+			} else {
+				// network fail..
+			}
+		} // servers loop end
+	} // forever loop end
+}
+
+// ShardRequest, called by shardRequestLoop
+// send ShardRequest RPC to server in other group
+func (kv *ShardKV) sendGcRequest(server string, shard, deleteCi int) (ok bool, reply *GcReply) {
+	args := &GcArgs{
+		Shard:    shard,
+		Ci:       kv.ss.Ci,
+		Gid:      kv.gid,
+		Server:   kv.me,
+		DeleteCi: deleteCi,
+	}
+
+	reply = &GcReply{
+		Ci:  0,
+		Err: "",
+	}
+
+	clientEnd := kv.make_end(server)
+	kv.mu.Unlock()
+	//DPrintf("[KV %v-%v]: sendShardRequest unlock", kv.gid, kv.me)
+	ok = clientEnd.Call("ShardKV.GcRequest", args, reply)
+	kv.mu.Lock()
+	//DPrintf("[KV %v-%v]: sendShardRequest lock", kv.gid, kv.me)
+	return
+}
+
+// GcRequest RPC
+// called by new owner of one shard to delete shard in the previous owner
+func (kv *ShardKV) GcRequest(args *GcArgs, reply *GcReply) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	// configIndex check
+	//if args.Ci != kv.ss.Ci {
+	//	reply.Err = ErrWrongConfigIndex
+	//	reply.Ci = maxInt(args.Ci, kv.ss.Ci)
+	//	DPrintf("[KV %v-%v]: ShardGcRequest from KV %v-%v, %v, his = %v, mine = %v",
+	//		kv.gid, kv.me, args.Gid, args.Server, reply.Err, args.Ci, kv.ss.Ci)
+	//	return
+	//}
+	//reply.Ci = kv.ss.Ci
+
+	// duplicate check
+	if args.DeleteCi <= kv.ss.DeletedShard[args.Shard] {
+		reply.Err = ErrAlreadyDone
+		DPrintf("[KV %v-%v]: ShardGcRequest from KV %v-%v, %v, shard %v, DeleteCi = %v, DeletedShard = %v",
+			kv.gid, kv.me, args.Gid, args.Server, reply.Err, args.Shard, args.DeleteCi, kv.ss.DeletedShard)
+		return
+	}
+	op := Op{
+		OpType:   ShardGcType,
+		Shard:    args.Shard,
+		DeleteCi: args.DeleteCi,
+	}
+
+	// try to start ShardGcLog
+	kv.mu.Unlock()
+	if _, _, isLeader := kv.rf.Start(op); isLeader {
+		reply.Err = OK
+		DPrintf("[KV %v-%v]: ShardGcLog Started! shard %v, deleteCi = %v, gid = %v",
+			kv.gid, kv.me, args.Shard, args.DeleteCi, args.Gid)
+	} else {
+		reply.Err = ErrWrongLeader
+	}
+	kv.mu.Lock()
+
+	// leadership check
+	if reply.Err == ErrWrongLeader {
+		DPrintf("[KV %v-%v]: ShardGcRequest from KV %v-%v, %v",
+			kv.gid, kv.me, args.Gid, args.Server, reply.Err)
+		return
+	}
+
+	DPrintf("[KV %v-%v]: ShardGcRequest from KV %v-%v, %v",
+		kv.gid, kv.me, args.Gid, args.Server, reply.Err)
 	return
 }
 
@@ -672,6 +814,7 @@ func (kv *ShardKV) generateSnapshot() []byte {
 	encoder.Encode(kv.ss.OnCharge)
 	encoder.Encode(kv.ss.Ci)
 	encoder.Encode(kv.ss.ReadyShard)
+	encoder.Encode(kv.ss.DeletedShard)
 
 	data := writer.Bytes()
 	DPrintf("[KV %v-%v]: snapshot = %v", kv.gid, kv.me, data)
@@ -930,10 +1073,11 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.ss = ShardState{
-		Ci:         0,
-		configs:    make(map[int]*shardmaster.Config),
-		ReadyShard: make([]bool, shardmaster.NShards),
-		OnCharge:   make([]int, shardmaster.NShards),
+		Ci:           0,
+		configs:      make(map[int]*shardmaster.Config),
+		ReadyShard:   make([]bool, shardmaster.NShards),
+		OnCharge:     make([]int, shardmaster.NShards),
+		DeletedShard: make([]int, shardmaster.NShards),
 	}
 	for i := range kv.ss.OnCharge {
 		kv.ss.OnCharge[i] = -1
@@ -941,7 +1085,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 
 	snapshot := persister.ReadSnapshot()
 	if len(snapshot) != 0 {
-		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard = DecodeSnapshot(snapshot)
+		kv.Data, kv.ResultMap, kv.CommitIndex, kv.CommitTerm, kv.ss.OnCharge, kv.ss.Ci, kv.ss.ReadyShard, kv.ss.DeletedShard = DecodeSnapshot(snapshot)
 		DPrintf("[KV %v-%v] read from snapshot, onCharge = %v, ci = %v, data = %v, commitIndex = %v",
 			kv.gid, kv.me, kv.ss.OnCharge, kv.ss.Ci, kv.Data, kv.CommitIndex)
 	}

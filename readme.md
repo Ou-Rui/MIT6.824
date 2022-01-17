@@ -23,14 +23,36 @@
 - 收到时检查：killed, ci
 
 ### 什么情况下，请求者应该继续等待该QueryIndex
-- 网络错误
 - ci不对
 
-或者说，什么时候该QueryIndex没救了
-都说Not OnCharge
+### 或者说，什么时候该QueryIndex没救了
+- 都说Not OnCharge
+- 连续网络错误
 
 ### 什么时候开始提供服务
 - ci与client匹配，OnCharge[shard] == ci
+
+## Challenge1 方案
+### 什么时候可以删除旧shard
+- 新Owner的`ShardLog` Apply之后
+  - go一个线程向旧Owner发送`GcRequest`
+  - 需要在`ShardLog`中记录旧Owner的信息
+  - 不需要记录还有谁没删除，因为重启后会重新Apply `ShardLog`，到时会再
+    go一个线程
+
+### 旧Owner怎么处理ShardGcRequest
+- 收到`GcRequest`时检查：
+  - ci, **是否已经删除**
+  - 似乎不需要检查ci
+- Start `GcLog`, Apply时删除Shard
+  - 维护一个已删除的Shard列表：`DeletedShards`，val为删除的shard对应的
+    ci
+  - 如果`GcRequest`中的`DeleteCi` < `DeletedShards[Shard]`，说明
+    已经删除过
+
+### NOTE
+- 注意不要给自己发删除请求
+
 
 ## TODO
 - Challenge! Garbage Collection
@@ -39,6 +61,16 @@
 
 ## 更新日志
 虽然到4B才想起来写...
+
+### 2022.1.17
+PASS TestChallenge1Delete  
+DEBUG TestChallenge1Concurrent
+
+- 初步完成Challenge1
+- **DEBUG**
+  - 不应该删除resultMap
+- `GcRequest()` RPC
+  - 新owner向旧owner发送`GcRequest`, 让旧owner删除shard数据
 
 ### 2022.1.12
 PASS 4B!!!  500次

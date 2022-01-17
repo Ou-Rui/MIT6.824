@@ -20,11 +20,12 @@ import (
 type OpType string
 
 const (
-	GetType    OpType = "Get"
-	PutType    OpType = "Put"
-	AppendType OpType = "Append"
-	ConfigType OpType = "Config"
-	ShardType  OpType = "Shard"
+	GetType     OpType = "Get"
+	PutType     OpType = "Put"
+	AppendType  OpType = "Append"
+	ConfigType  OpType = "Config"
+	ShardType   OpType = "Shard"
+	ShardGcType OpType = "ShardGc"
 )
 
 type Op struct {
@@ -42,6 +43,10 @@ type Op struct {
 	Data        map[string]string
 	ResultMap   map[string]Result
 	Shard       int
+
+	// ShardGc
+	Gid      int
+	DeleteCi int
 }
 
 //goland:noinspection GoCommentStart
@@ -113,17 +118,18 @@ type ShardReply struct {
 	Term        int
 }
 
-//type CommitArgs struct {
-//	Shard       int
-//	Term        int
-//	ConfigIndex int
-//}
-//
-//type CommitReply struct {
-//	Term        int
-//	ConfigIndex int
-//	Err
-//}
+type GcArgs struct {
+	Shard    int
+	Ci       int
+	DeleteCi int
+	Gid      int
+	Server   int
+}
+
+type GcReply struct {
+	Ci int
+	Err
+}
 
 func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 	t := strings.Split(id, "+")
@@ -141,7 +147,7 @@ func parseRequestId(id string) (opType OpType, requestIndex int, clientId int) {
 
 func DecodeSnapshot(snapshot []byte) (
 	Data map[string]string, ResultMap map[string]Result, CommitIndex int, CommitTerm int,
-	OnCharge []int, Ci int, ReadyShard []bool) {
+	OnCharge []int, Ci int, ReadyShard []bool, DeletedShard []int) {
 	reader := bytes.NewBuffer(snapshot)
 	decoder := labgob.NewDecoder(reader)
 	if decoder.Decode(&Data) != nil ||
@@ -150,19 +156,12 @@ func DecodeSnapshot(snapshot []byte) (
 		decoder.Decode(&CommitTerm) != nil ||
 		decoder.Decode(&OnCharge) != nil ||
 		decoder.Decode(&Ci) != nil ||
-		decoder.Decode(&ReadyShard) != nil {
+		decoder.Decode(&ReadyShard) != nil ||
+		decoder.Decode(&DeletedShard) != nil {
 		DPrintf("Decode snapshot error...")
 	}
 	return
 }
-
-//func deepCopy(dst, src interface{}) error {
-//	var buf bytes.Buffer
-//	if err := gob.NewEncoder(&buf).Encode(src); err != nil {
-//		return err
-//	}
-//	return gob.NewDecoder(bytes.NewBuffer(buf.Bytes())).Decode(dst)
-//}
 
 func maxInt(x, y int) int {
 	if x > y {
