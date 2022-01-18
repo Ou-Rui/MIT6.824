@@ -54,13 +54,13 @@
 - 注意不要给自己发删除请求
 
 
-## TODO
-- Challenge! Garbage Collection
-  - 收到有效的Shard后，回发确认RPC
-  - 问题：如何确保确认RPC送达
-
 ## 更新日志
 虽然到4B才想起来写...
+
+### 2022.1.18
+PASS ALL TEST !!!
+
+- 原来Challenge2已经实现了啊，那没事了
 
 ### 2022.1.17
 PASS TestChallenge1Delete  
